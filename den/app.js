@@ -19,7 +19,7 @@ const BUCKETS=[
   {id:'long',name:'Dlouhodobé',short:'Dlouhodobé'}
 ];
 const STATUSES=[{id:'open',name:'Otevřené'},{id:'wip',name:'Rozpracované'},{id:'wait',name:'Čeká'},{id:'done',name:'Hotovo'}];
-const APP_VERSION=3;
+const APP_VERSION=4;
 const CAT_REPAIR={'432daf02':'sva','7e50a6ef':'sva','97d85896':'sva','c47f2c69':'zam','59a4c2fe':'zam','b39cb988':'sva','727076df':'sva','83367aa7':'fre','6a18e6c6':'fre','79486842':'fre','83549cb7':'lin','3ef16c57':'ost','6443a152':'ost','738ca1f6':'fre','66c017e9':'zam','a1b882a7':'zam','249f1330':'zam','9c9d5258':'zam','354dbdf3':'zam','b9e025f0':'pul','4185f791':'pul','fbe7d7cd':'pul','aab0cba9':'sva','c6bfbc8d':'sva','4aeb6c08':'sva','a3d38c38':'sva','6e49be28':'ost','5b60e232':'ost','ee532219':'lin','deafdb98':'lin','527a770f':'inv','f19d2292':'inv','f2e4f1b8':'sva','875b1851':'fre','c0e70d5':'inv','802e913d':'ost'};
 function textKey(s){return String(s||'').trim().toLowerCase().replace(/[\u2010-\u2015\u2212]/g,'-').replace(/\s+/g,' ')}
 function fnv1a(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return (h>>>0).toString(16)}
@@ -135,6 +135,37 @@ function normalizeRem(raw){
   else when=null;
   return{id:String(raw.id||uid('r')),text,when,done:!!raw.done,created:toISOdate(raw.created)||todayISO()};
 }
+const TAG_SEF='Od šéfa';
+function nowStamp(){
+  const d=new Date();
+  return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes());
+}
+function stampToDisplay(at){
+  if(!at)return '';
+  const [d,tm]=String(at).split('T');
+  return czDateSp(d)+(tm?' v '+tm.slice(0,5):'');
+}
+function normalizeNote(raw){
+  if(!raw||typeof raw!=='object')return null;
+  const text=String(raw.text||raw.t||raw.note||'').trim();if(!text)return null;
+  let tag=raw.tag||raw.g||'';
+  if(tag===true||tag==='sef'||tag===1)tag=TAG_SEF;
+  tag=String(tag||'').trim();
+  if(/^od šéfa$/i.test(tag)||/^od sefa$/i.test(tag))tag=TAG_SEF;
+  let at=raw.at||raw.when||raw.created||'';
+  at=String(at).replace(' ','T').slice(0,16);
+  if(/^\d{4}-\d{2}-\d{2}$/.test(at))at+='T09:00';
+  if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(at))at=nowStamp();
+  return{id:String(raw.id||uid('n')),text,tag,at,updated:String(raw.updated||at).slice(0,16)};
+}
+function isIOS(){
+  const ua=navigator.userAgent||'';
+  return /iPhone|iPad|iPod/.test(ua)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+}
+function speechAvailable(){
+  if(isIOS())return false;
+  return !!(window.SpeechRecognition||window.webkitSpeechRecognition);
+}
 
 const defaultSettings=()=>({billedUntil:'2026-10-15',rate:600,specialEnd:'2026-11-30'});
 function migrateOld(){
@@ -145,6 +176,8 @@ function migrateOld(){
   if(!Array.isArray(out.invoices)) out.invoices=load('dochazka_invoices',[]);
   if(!out.settings) out.settings=Object.assign(defaultSettings(),load('dochazka_settings',{}));
   if(!Array.isArray(out.reminders)) out.reminders=[];
+  out.notes=load('den_notes',[]);
+  if(!Array.isArray(out.notes)) out.notes=[];
   return out;
 }
 const boot=migrateOld();
@@ -153,8 +186,9 @@ let days=(boot.days||[]).map(normalizeDay).filter(Boolean);
 let expenses=(boot.expenses||[]).map(normalizeExp).filter(Boolean);
 let invoices=(boot.invoices||[]).map(normalizeExp).filter(Boolean);
 let reminders=(boot.reminders||[]).map(normalizeRem).filter(Boolean);
+let notes=(boot.notes||[]).map(normalizeNote).filter(Boolean);
 let settings=Object.assign(defaultSettings(),boot.settings||{});
-const persist=()=>{save('den_tasks',tasks);save('den_days',days);save('den_expenses',expenses);save('den_invoices',invoices);save('den_reminders',reminders);save('den_settings',settings)};
+const persist=()=>{save('den_tasks',tasks);save('den_days',days);save('den_expenses',expenses);save('den_invoices',invoices);save('den_reminders',reminders);save('den_notes',notes);save('den_settings',settings)};
 repairStoredTasks(tasks);
 persist();
 
@@ -176,11 +210,12 @@ window.__lastMailto='';
 function setView(v){
   view=v;
   document.querySelectorAll('.tabbar button').forEach(b=>b.classList.toggle('on',b.dataset.view===v));
-  ['dnes','ukoly','dochazka','rems'].forEach(id=>$('view-'+id).hidden=v!==id);
+  ['dnes','ukoly','dochazka','rems','notes'].forEach(id=>$('view-'+id).hidden=v!==id);
   if(v==='dnes')renderDnes();
   if(v==='ukoly')renderTasks();
   if(v==='dochazka')renderDochazka();
   if(v==='rems')renderRems();
+  if(v==='notes')renderNotes();
 }
 document.querySelectorAll('.tabbar button').forEach(b=>b.onclick=()=>setView(b.dataset.view));
 
@@ -427,6 +462,25 @@ $('sheetSave').onclick=()=>{
     persist();closeSheet();renderDochazka();toast('Faktura zapsána');
     return;
   }
+  if(sheetMode==='note-task'){
+    const draft=$('overlay')._draft||{};
+    const bucket=draft.bucket||'tomorrow';
+    const text=(draft.text||'').trim();if(!text){toast('Napiš úkol');return}
+    const note=draft.tag?draft.tag:'';
+    tasks.push(normalizeTask({id:uid('t'),text,cat:'ost',bucket,status:'open',note,created:todayISO()}));
+    persist();closeSheet();renderTasks();renderDnes();renderNotes();toast('Úkol přidán');
+    return;
+  }
+  if(sheetMode==='note-rem'){
+    const text=($('nrText').value||'').trim();
+    const date=$('nrDate').value,time=$('nrTime').value;
+    if(!text){toast('Napiš připomínku');return}
+    if(!date){toast('Vyber den');return}
+    const when=date+'T'+(time||'09:00').slice(0,5);
+    reminders.push(normalizeRem({id:uid('r'),text,when,done:false,created:todayISO()}));
+    persist();closeSheet();renderDnes();renderRems();renderNotes();toast('Připomínka přidána');
+    return;
+  }
   if(sheetMode!=='task')return;
   const draft=$('overlay')._draft||{};
   const text=($('fText').value||'').trim(),note=($('fNote').value||'').trim();
@@ -538,6 +592,183 @@ function renderRems(){
   else b.forEach(r=>dn.appendChild(remCard(r)));
 }
 
+let noteEditId=null, rec=null, recOn=false, recBase='';
+function saveNoteDraft(){
+  if(!$('noteText'))return;
+  save('den_note_draft',{text:$('noteText').value,tag:!!$('noteTag').checked,edit:noteEditId||''});
+}
+function restoreNoteDraft(){
+  const d=load('den_note_draft',null);if(!d||!$('noteText'))return;
+  $('noteText').value=d.text||'';
+  $('noteTag').checked=!!d.tag;
+  noteEditId=d.edit||null;
+  if($('noteCancelEdit'))$('noteCancelEdit').hidden=!noteEditId;
+  if(noteEditId)$('noteSave').textContent='Uložit úpravu';
+}
+function clearNoteComposer(){
+  noteEditId=null;
+  $('noteText').value='';
+  $('noteTag').checked=false;
+  $('noteSave').textContent='Uložit';
+  if($('noteCancelEdit'))$('noteCancelEdit').hidden=true;
+  save('den_note_draft',{text:'',tag:false,edit:''});
+}
+function setDictHint(s){if($('dictHint'))$('dictHint').textContent=s||''}
+function stopDictation(){
+  recOn=false;
+  try{if(rec)rec.stop()}catch(e){}
+  rec=null;
+  const b=$('dictBtn');if(b){b.classList.remove('live');b.textContent='Diktovat'}
+}
+function startDictation(){
+  if(recOn){stopDictation();return}
+  if(!speechAvailable()){
+    setDictHint('klepni na mikrofon na klávesnici a diktuj');
+    const ta=$('noteText');ta.focus();ta.scrollIntoView({block:'center'});
+    return;
+  }
+  const C=window.SpeechRecognition||window.webkitSpeechRecognition;
+  try{rec=new C()}catch(e){setDictHint('klepni na mikrofon na klávesnici a diktuj');$('noteText').focus();return}
+  rec.lang='cs-CZ';
+  rec.interimResults=true;
+  try{rec.continuous=true}catch(e){}
+  recBase=$('noteText').value||'';
+  if(recBase&&!/\s$/.test(recBase))recBase+=' ';
+  rec.onresult=e=>{
+    let fin='', interim='';
+    for(let i=0;i<e.results.length;i++){
+      const x=e.results[i][0].transcript;
+      if(e.results[i].isFinal)fin+=x+(/\s$/.test(x)?'':' ');
+      else interim+=x;
+    }
+    $('noteText').value=(recBase+fin+interim).replace(/\s+$/,(interim?'':''));
+    if(!interim)recBase=$('noteText').value+(( $('noteText').value && !/\s$/.test($('noteText').value))?' ':'');
+    saveNoteDraft();
+  };
+  rec.onerror=ev=>{
+    const err=String(ev&&ev.error||'');
+    if(/not-allowed|service-not-allowed|network|audio-capture/.test(err) || !speechAvailable()){
+      stopDictation();
+      setDictHint('klepni na mikrofon na klávesnici a diktuj');
+      $('noteText').focus();
+    }
+  };
+  rec.onend=()=>{
+    if(recOn){try{rec.start()}catch(e){stopDictation()}}
+  };
+  try{rec.start()}catch(e){stopDictation();setDictHint('klepni na mikrofon na klávesnici a diktuj');$('noteText').focus();return}
+  recOn=true;
+  $('dictBtn').classList.add('live');
+  $('dictBtn').textContent='Stop';
+  setDictHint('Mluv. Klepni na Stop, až budeš hotový.');
+}
+function sortedNotes(){return notes.slice().sort((a,b)=>String(b.at||'').localeCompare(String(a.at||''))||String(b.id).localeCompare(String(a.id)))}
+function startEditNote(n){
+  stopDictation();
+  noteEditId=n.id;
+  $('noteText').value=n.text;
+  $('noteTag').checked=n.tag===TAG_SEF;
+  $('noteSave').textContent='Uložit úpravu';
+  $('noteCancelEdit').hidden=false;
+  saveNoteDraft();
+  setView('notes');
+  $('noteText').focus();
+  $('noteText').scrollIntoView({block:'center'});
+}
+function saveNoteFromComposer(){
+  const text=($('noteText').value||'').trim();
+  if(!text){toast('Napiš nebo nadiktuj poznámku');return}
+  const tag=$('noteTag').checked?TAG_SEF:'';
+  if(noteEditId){
+    const n=notes.find(x=>x.id===noteEditId);
+    if(n){n.text=text;n.tag=tag;n.updated=nowStamp()}
+    toast('Poznámka upravena');
+  }else{
+    notes.push(normalizeNote({id:uid('n'),text,tag,at:nowStamp()}));
+    toast('Poznámka uložena');
+  }
+  clearNoteComposer();
+  persist();
+  renderNotes();renderDnes();
+}
+function deleteNote(n){
+  if(!confirm('Smazat poznámku?'))return;
+  notes=notes.filter(x=>x!==n);
+  if(noteEditId===n.id)clearNoteComposer();
+  persist();renderNotes();renderDnes();toast('Poznámka smazána');
+}
+function openNoteTaskSheet(n){
+  sheetMode='note-task';sheetTarget=n;
+  const draft={text:n.text,tag:n.tag||'',bucket:'tomorrow'};
+  $('sheetTitle').textContent='Udělat z toho úkol';
+  $('sheetDelete').hidden=true;
+  $('sheetBody').innerHTML='<p style="margin:0 0 12px">'+esc(n.text)+'</p>'+(n.tag?'<p class="muted">'+esc(n.tag)+'</p>':'')+
+    '<div class="field"><span class="lbl">Období</span><div class="chips" id="ntBucket"></div></div>';
+  const redraw=()=>paintChips($('ntBucket'),BUCKETS,draft.bucket,false,id=>{draft.bucket=id;redraw()});
+  redraw();
+  $('overlay')._draft=draft;
+  $('overlay').hidden=false;document.body.classList.add('locked');
+}
+function openNoteRemSheet(n){
+  sheetMode='note-rem';sheetTarget=n;
+  $('sheetTitle').textContent='Připomenout';
+  $('sheetDelete').hidden=true;
+  const date=addDays(todayISO(),1);
+  $('sheetBody').innerHTML='<div class="field"><label for="nrText">Připomínka</label><textarea id="nrText" rows="3">'+esc(n.text)+'</textarea></div>'+
+    '<div class="row field"><div><label for="nrDate">Den</label><input type="date" id="nrDate" value="'+esc(date)+'"></div>'+
+    '<div><label for="nrTime">Čas</label><input type="time" id="nrTime" value="08:00"></div></div>'+
+    '<div class="chips" id="nrChips"></div>';
+  $('overlay').hidden=false;document.body.classList.add('locked');
+  remChipBar($('nrChips'),$('nrDate'),$('nrTime'));
+}
+function noteCard(n,compact){
+  const d=document.createElement('div');d.className='note';
+  d.innerHTML='<div class="ntime">'+esc(stampToDisplay(n.at))+(n.tag?' · '+esc(n.tag):'')+'</div>'+
+    '<div class="ntext">'+esc(n.text)+'</div>'+
+    (compact?'':'<div class="note-actions">'+
+      '<button type="button" data-a="edit">Upravit</button>'+
+      '<button type="button" data-a="task">Udělat z toho úkol</button>'+
+      '<button type="button" data-a="rem">Připomenout</button>'+
+      '<button type="button" class="danger" data-a="del">Smazat</button>'+
+    '</div>');
+  if(!compact){
+    d.querySelector('[data-a="edit"]').onclick=()=>startEditNote(n);
+    d.querySelector('[data-a="task"]').onclick=()=>openNoteTaskSheet(n);
+    d.querySelector('[data-a="rem"]').onclick=()=>openNoteRemSheet(n);
+    d.querySelector('[data-a="del"]').onclick=()=>deleteNote(n);
+  }
+  return d;
+}
+function renderNotes(){
+  if(!speechAvailable())setDictHint('klepni na mikrofon na klávesnici a diktuj');
+  else if(!recOn)setDictHint('');
+  const list=$('noteList'),empty=$('noteEmpty');
+  list.innerHTML='';
+  const arr=sortedNotes();
+  if(!arr.length){empty.hidden=false;return}
+  empty.hidden=true;
+  arr.forEach(n=>list.appendChild(noteCard(n,false)));
+}
+function renderTodayNotes(){
+  const today=todayISO();
+  const todays=sortedNotes().filter(n=>String(n.at||'').slice(0,10)===today);
+  const unsynced=(function(){
+    const snap=load('den_snap',null);
+    const map=new Map((snap&&snap.poznamky||[]).map(x=>[x.id,x]));
+    return notes.filter(n=>{const p=map.get(n.id);return !p||p.text!==n.text||(p.tag||'')!==(n.tag||'');}).length;
+  })();
+  const sum=$('todayNotesSum');
+  if(!sum)return;
+  const parts=[];
+  const nToday=todays.length, word=nToday===1?'poznámka':nToday<5?'poznámky':'poznámek';
+  parts.push(nToday?('Dnes '+nToday+' '+word):'Dnes žádná poznámka');
+  if(notes.length)parts.push('celkem '+notes.length);
+  if(unsynced)parts.push(unsynced+' k odeslání');
+  sum.textContent=parts.join(' · ');
+  const box=$('todayNotesList');box.innerHTML='';
+  todays.slice(0,3).forEach(n=>box.appendChild(noteCard(n,true)));
+}
+
 function renderDnes(){
   const d=parseISO(todayISO());
   $('todayLabel').textContent=WD[d.getDay()]+' '+d.getDate()+'. '+(d.getMonth()+1)+'. '+d.getFullYear();
@@ -545,6 +776,7 @@ function renderDnes(){
   renderQuickBucket();
   remChipBar($('remChips'),$('remDate'),$('remTime'));
   renderTodayRems();
+  renderTodayNotes();
   renderPendingMail();
   updateTotal();
 }
@@ -643,6 +875,15 @@ function openMarkBilled(p,openMin,expSum,total){
   $('overlay').hidden=false;document.body.classList.add('locked');
 }
 $('settingsBtn').onclick=openSettings;
+$('dictBtn').onclick=startDictation;
+$('noteSave').onclick=saveNoteFromComposer;
+$('noteCancelEdit').onclick=()=>{clearNoteComposer();toast('Úprava zrušena')};
+$('noteText').addEventListener('input',saveNoteDraft);
+$('noteTag').addEventListener('change',saveNoteDraft);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'){saveNoteDraft();stopDictation()}});
+window.addEventListener('pagehide',saveNoteDraft);
+$('goNotes').onclick=()=>setView('notes');
+
 
 /* ---------- Import ---------- */
 function b64urlDecode(s){
@@ -670,6 +911,7 @@ function parseImportedBundle(raw){
     expenses:(data.expenses||[]).map(normalizeExp).filter(Boolean),
     invoices:(data.invoices||data.invoiced||[]).map(normalizeExp).filter(Boolean),
     reminders:(data.reminders||data.pripominky||[]).map(normalizeRem).filter(Boolean),
+    poznamky:(data.poznamky||[]).map(normalizeNote).filter(Boolean),
     billedUntil:data.billedUntil,specialEnd:data.specialEnd,rate:data.rate
   };
 }
@@ -681,6 +923,7 @@ function importSummary(b){
   add(b.expenses.length,'výdaj','výdaje','výdajů');
   add(b.invoices.length,'fakturu','faktury','faktur');
   add(b.reminders.length,'připomínku','připomínky','připomínek');
+  add((b.poznamky||[]).length,'poznámku','poznámky','poznámek');
   return parts;
 }
 function upsert(arr,item,same){
@@ -698,6 +941,7 @@ function applyImported(b){
   b.expenses.forEach(d=>upsert(expenses,d,(a,c)=>a.date===c.date&&a.what===c.what));
   b.invoices.forEach(d=>upsert(invoices,d,(a,c)=>a.date===c.date&&a.what===c.what));
   b.reminders.forEach(d=>upsert(reminders,d,(a,c)=>a.id===d.id||(a.text===d.text&&a.when===d.when)));
+  (b.poznamky||[]).forEach(n=>upsert(notes,n,(a,c)=>a.id===c.id||(a.text===c.text&&a.at===c.at)));
   tasks.sort((a,b)=>String(a.created).localeCompare(String(b.created)));
   days.sort((a,b)=>a.date.localeCompare(b.date));
   expenses.sort((a,b)=>a.date.localeCompare(b.date));
@@ -755,6 +999,7 @@ function takeSnapshot(){
     days:days.map(d=>({date:d.date,worked_min:d.worked_min,work:d.work,nonbillable:!!d.nonbillable,spans:d.spans,pause_min:d.pause_min,notes:d.notes||''})),
     rem:reminders.map(r=>({id:r.id,text:r.text,when:r.when,done:!!r.done})),
     notes:$('dayNotes')?$('dayNotes').value.trim():'',
+    poznamky:notes.map(n=>({id:n.id,at:n.at,text:n.text,tag:n.tag||'',updated:n.updated||n.at})),
     expenses:expenses.map(e=>({date:e.date,what:e.what,czk:e.czk}))
   });
 }
@@ -795,12 +1040,22 @@ function collectChanges(){
     if(!p)return true;
     return p.text!==r.text||p.when!==r.when||!!p.done!==!!r.done;
   }).map(r=>({when:r.when||null,text:r.text}));
-  const notes=($('dayNotes').value||'').trim();
-  const notesOut=(snap&&snap.notes===notes)?'':notes;
-  return{date,dochazka,ukoly:{new:neu,done,changed},pripominky,notes:notesOut};
+  const notesDay=($('dayNotes').value||'').trim();
+  const notesOut=(snap&&snap.notes===notesDay)?'':notesDay;
+  const snapNotes=new Map((snap&&snap.poznamky||[]).map(x=>[x.id,x]));
+  const poznamky=notes.filter(n=>{
+    const prev=snapNotes.get(n.id);
+    if(!prev)return true;
+    return prev.text!==n.text||(prev.tag||'')!==(n.tag||'')||(prev.at||'')!==(n.at||'');
+  }).map(n=>{
+    const o={at:String(n.at||'').slice(0,16),text:n.text};
+    if(n.tag)o.tag=n.tag;
+    return o;
+  });
+  return{date,dochazka,ukoly:{new:neu,done,changed},pripominky,poznamky,notes:notesOut};
 }
 function hasChanges(p){
-  return !!(p.dochazka||p.ukoly.new.length||p.ukoly.done.length||p.ukoly.changed.length||p.pripominky.length||p.notes);
+  return !!(p.dochazka||p.ukoly.new.length||p.ukoly.done.length||p.ukoly.changed.length||p.pripominky.length||(p.poznamky&&p.poznamky.length)||p.notes);
 }
 function humanSummary(p){
   const L=['Den '+czDate(p.date),''];
@@ -816,7 +1071,8 @@ function humanSummary(p){
   if(p.ukoly.done.length){L.push('Hotovo:');p.ukoly.done.forEach(t=>L.push('- '+t));L.push('')}
   if(p.ukoly.changed.length){L.push('Upravené úkoly:');p.ukoly.changed.forEach(t=>L.push('- '+t.t));L.push('')}
   if(p.pripominky.length){L.push('Připomínky:');p.pripominky.forEach(r=>L.push('- '+(r.when?formatWhen(r.when)+': ':'')+r.text));L.push('')}
-  if(p.notes){L.push('Poznámky:',p.notes,'')}
+  if(p.poznamky&&p.poznamky.length){L.push('Poznámky:');p.poznamky.forEach(n=>L.push('- '+(n.at?stampToDisplay(n.at)+': ':'')+(n.tag?n.tag+' · ':'')+n.text));L.push('')}
+  if(p.notes){L.push('Poznámky k dnešku:',p.notes,'')}
   return L.join('\n').trim();
 }
 function packBody(subjectDate,payload,part,parts){
@@ -836,22 +1092,23 @@ function splitPayload(p){
   const two=packBody(dateLabel,short,1,1);
   if(two.body.length<=BODY_MAX)return[two];
   const chunks=[];
-  const base={date:p.date,dochazka:null,ukoly:{new:[],done:[],changed:[]},pripominky:[],notes:''};
-  if(p.dochazka||p.notes)chunks.push(Object.assign({},base,{dochazka:p.dochazka,notes:p.notes}));
-  const take=()=>({date:p.date,dochazka:null,ukoly:{new:[],done:[],changed:[]},pripominky:[],notes:''});
+  const base={date:p.date,dochazka:null,ukoly:{new:[],done:[],changed:[]},pripominky:[],poznamky:[],notes:''};
+  if(p.dochazka||p.notes||(p.poznamky&&p.poznamky.length))chunks.push(Object.assign({},base,{dochazka:p.dochazka,notes:p.notes,poznamky:p.poznamky||[]}));
+  const take=()=>({date:p.date,dochazka:null,ukoly:{new:[],done:[],changed:[]},pripominky:[],poznamky:[],notes:''});
   let cur=take();
   const fit=obj=>{const b=packBody(dateLabel,Object.assign({},obj,{_human:humanSummary(obj)}),1,1);return b.body.length<=BODY_MAX-20};
   const pushList=(key,arr)=>{
     arr.forEach(item=>{
       const probe=JSON.parse(JSON.stringify(cur));
       if(key==='pripominky')probe.pripominky=probe.pripominky.concat([item]);
+      else if(key==='poznamky')probe.poznamky=(probe.poznamky||[]).concat([item]);
       else if(key==='done')probe.ukoly.done=probe.ukoly.done.concat([item]);
       else probe.ukoly[key]=probe.ukoly[key].concat([item]);
       if(fit(probe))cur=probe;
-      else{if(hasChanges(cur))chunks.push(cur);cur=take();if(key==='pripominky')cur.pripominky=[item];else if(key==='done')cur.ukoly.done=[item];else cur.ukoly[key]=[item]}
+      else{if(hasChanges(cur))chunks.push(cur);cur=take();if(key==='pripominky')cur.pripominky=[item];else if(key==='poznamky')cur.poznamky=[item];else if(key==='done')cur.ukoly.done=[item];else cur.ukoly[key]=[item]}
     });
   };
-  pushList('new',p.ukoly.new);pushList('done',p.ukoly.done);pushList('changed',p.ukoly.changed);pushList('pripominky',p.pripominky);
+  pushList('new',p.ukoly.new);pushList('done',p.ukoly.done);pushList('changed',p.ukoly.changed);pushList('pripominky',p.pripominky);pushList('poznamky',p.poznamky||[]);
   if(hasChanges(cur))chunks.push(cur);
   if(!chunks.length)chunks.push(p);
   const n=chunks.length;
@@ -906,7 +1163,9 @@ $('sendBtn').onclick=startSend;
   pendingMails=load('den_pending_mails',[])||[];
   updateTotal();
 })();
-if(!load('den_snap',null)&&(tasks.length||days.length))takeSnapshot();
+if($('appVer'))$('appVer').textContent='verze '+APP_VERSION;
+if(!load('den_snap',null)&&(tasks.length||days.length||notes.length))takeSnapshot();
+restoreNoteDraft();
 renderDnes();
 handleHashImport();
 function setupSW(){

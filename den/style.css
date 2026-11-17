@@ -96,7 +96,7 @@ input[type=date],input[type=time],input[type=number]{min-height:48px}
 .badge{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:99px;background:var(--chip);color:var(--muted)}
 .badge.warn{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}
 .tabbar{position:fixed;left:50%;transform:translateX(-50%);bottom:0;width:100%;max-width:640px;display:flex;background:var(--card);border-top:1px solid var(--line);padding:6px 4px calc(env(safe-area-inset-bottom) + 6px);z-index:15;box-shadow:0 -1px 8px rgba(0,0,0,.06)}
-.tabbar button{flex:1;min-height:52px;border-radius:12px;font-size:12px;font-weight:700;color:var(--muted);padding:4px 2px;line-height:1.2}
+.tabbar button{flex:1;min-height:52px;border-radius:12px;font-size:11px;font-weight:700;color:var(--muted);padding:4px 1px;line-height:1.15}
 .tabbar button.on{color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent)}
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:20;display:flex;align-items:flex-end;justify-content:center}
 .overlay[hidden]{display:none}
@@ -119,3 +119,19 @@ body.locked{overflow:hidden}
 .done-box{display:flex;flex-direction:column;gap:8px}
 
 h1 .ver{display:inline-block;margin-left:8px;font-size:13px;font-weight:600;letter-spacing:0;color:var(--muted);vertical-align:middle}
+
+.dict-btn{width:100%;min-height:72px;margin:4px 0 8px;border-radius:18px;background:var(--accent);color:#fff;font-size:22px;font-weight:700;letter-spacing:-.2px;box-shadow:0 8px 20px rgba(74,128,25,.35)}
+.dict-btn:active{opacity:.88}
+.dict-btn.live{background:#bd0926;box-shadow:0 8px 20px rgba(189,9,38,.35)}
+#dictHint{min-height:1.4em;margin:0 4px 12px}
+.note-composer textarea{min-height:160px;font-size:18px;line-height:1.45}
+.note-composer .primary{margin-top:12px}
+.note-composer .secondary{margin-top:8px}
+.note{display:flex;flex-direction:column;gap:8px;background:var(--card);border-radius:16px;padding:12px 14px;margin-bottom:8px;box-shadow:var(--shadow);border-left:4px solid var(--accent)}
+.note .ntime{font-size:13px;font-weight:700;color:var(--muted)}
+.note .ntext{font-weight:600;white-space:pre-wrap;word-wrap:break-word}
+.note-actions{display:flex;flex-wrap:wrap;gap:8px}
+.note-actions button{min-height:40px;padding:0 10px;border-radius:12px;border:1px solid var(--line);background:var(--bg);font-size:13px;font-weight:600;color:var(--text)}
+.note-actions button.danger{color:var(--danger);background:transparent}
+#todayNotesList .note{box-shadow:none;background:var(--bg);margin:8px 0 0}
+#noteCancelEdit{margin-top:8px}
