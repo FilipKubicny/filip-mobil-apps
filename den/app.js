@@ -19,6 +19,28 @@ const BUCKETS=[
   {id:'long',name:'Dlouhodobé',short:'Dlouhodobé'}
 ];
 const STATUSES=[{id:'open',name:'Otevřené'},{id:'wip',name:'Rozpracované'},{id:'wait',name:'Čeká'},{id:'done',name:'Hotovo'}];
+const APP_VERSION=3;
+const CAT_REPAIR={'432daf02':'sva','7e50a6ef':'sva','97d85896':'sva','c47f2c69':'zam','59a4c2fe':'zam','b39cb988':'sva','727076df':'sva','83367aa7':'fre','6a18e6c6':'fre','79486842':'fre','83549cb7':'lin','3ef16c57':'ost','6443a152':'ost','738ca1f6':'fre','66c017e9':'zam','a1b882a7':'zam','249f1330':'zam','9c9d5258':'zam','354dbdf3':'zam','b9e025f0':'pul','4185f791':'pul','fbe7d7cd':'pul','aab0cba9':'sva','c6bfbc8d':'sva','4aeb6c08':'sva','a3d38c38':'sva','6e49be28':'ost','5b60e232':'ost','ee532219':'lin','deafdb98':'lin','527a770f':'inv','f19d2292':'inv','f2e4f1b8':'sva','875b1851':'fre','c0e70d5':'inv','802e913d':'ost'};
+function textKey(s){return String(s||'').trim().toLowerCase().replace(/[\u2010-\u2015\u2212]/g,'-').replace(/\s+/g,' ')}
+function fnv1a(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return (h>>>0).toString(16)}
+function catId(raw){
+  const v=String((raw&&(raw.cat||raw.category||raw.c||raw.kat))||'').trim();
+  if(CATS.some(c=>c.id===v))return v;
+  const low=v.toLowerCase();
+  const byName=CATS.find(c=>c.name.toLowerCase()===low||c.short.toLowerCase()===low);
+  if(byName)return byName.id;
+  const aliases={'zámečnická':'zam','zámečnická hala':'zam','zamecnicka':'zam','půlkulatá':'pul','půlkulatá hala':'pul','pulkulata':'pul','nová linka a ohýbačka':'lin','nova linka':'lin','linka':'lin','ohýbačka':'lin','ohybacka':'lin','svařovna':'sva','svarovna':'sva','fréza':'fre','freza':'fre','investice':'inv','ostatní':'ost','ostatni':'ost'};
+  return aliases[low]||'ost';
+}
+function repairStoredTasks(list){
+  let n=0;
+  list.forEach(t=>{
+    if(t.cat&&t.cat!=='ost')return;
+    const mapped=CAT_REPAIR[fnv1a(textKey(t.text))];
+    if(mapped&&mapped!=='ost'&&mapped!==t.cat){t.cat=mapped;t.updated=Date.now();n++}
+  });
+  return n;
+}
 
 const $=id=>document.getElementById(id);
 const pad=n=>String(n).padStart(2,'0');
@@ -77,7 +99,7 @@ function toISOdate(v){
 function normalizeTask(raw){
   if(!raw||typeof raw!=='object')return null;
   const text=String(raw.text||raw.t||'').trim();if(!text)return null;
-  const cat=CATS.some(c=>c.id===(raw.cat||raw.category||raw.c))?(raw.cat||raw.category||raw.c):'ost';
+  const cat=catId(raw);
   const bucket=BUCKETS.some(b=>b.id===(raw.bucket||raw.b))?(raw.bucket||raw.b):'weeks';
   let status=raw.status||raw.s;if(status==='later')status='wait';if(raw.done===true)status='done';
   if(!STATUSES.some(s=>s.id===status))status='open';
@@ -133,6 +155,7 @@ let invoices=(boot.invoices||[]).map(normalizeExp).filter(Boolean);
 let reminders=(boot.reminders||[]).map(normalizeRem).filter(Boolean);
 let settings=Object.assign(defaultSettings(),boot.settings||{});
 const persist=()=>{save('den_tasks',tasks);save('den_days',days);save('den_expenses',expenses);save('den_invoices',invoices);save('den_reminders',reminders);save('den_settings',settings)};
+repairStoredTasks(tasks);
 persist();
 
 function dayMin(d){return d.nonbillable?0:d.worked_min}
@@ -591,8 +614,22 @@ function openSettings(){
   $('sheetDelete').hidden=true;
   $('sheetBody').innerHTML='<div class="field"><label for="sBilled">Vyfakturováno do (včetně)</label><input type="date" id="sBilled" value="'+esc(settings.billedUntil)+'"></div>'+
     '<div class="field"><label for="sSpecial">Konec přechodného období</label><input type="date" id="sSpecial" value="'+esc(settings.specialEnd)+'"><div class="muted">Teď 16. 10. – 30. 11. 2026, potom celé kalendářní měsíce.</div></div>'+
-    '<div class="field"><label for="sRate">Hodinovka v Kč</label><input type="number" id="sRate" min="0" step="1" value="'+esc(settings.rate)+'"></div>';
+    '<div class="field"><label for="sRate">Hodinovka v Kč</label><input type="number" id="sRate" min="0" step="1" value="'+esc(settings.rate)+'"></div>'+
+    '<p class="muted">Verze aplikace: '+APP_VERSION+'</p>'+
+    '<button type="button" class="secondary" id="forceUpdate">Aktualizovat aplikaci</button>';
   $('overlay').hidden=false;document.body.classList.add('locked');
+  const fu=$('forceUpdate');if(fu)fu.onclick=forceRefreshApp;
+}
+async function forceRefreshApp(){
+  toast('Aktualizuji…');
+  try{
+    const regs=await navigator.serviceWorker.getRegistrations();
+    await Promise.all(regs.map(r=>r.unregister()));
+    if(window.caches){const ks=await caches.keys();await Promise.all(ks.map(k=>caches.delete(k)))}
+  }catch(e){}
+  const u=new URL(location.href);
+  u.searchParams.set('v',String(APP_VERSION));
+  location.replace(u.pathname+u.search+(location.hash||''));
 }
 function openMarkBilled(p,openMin,expSum,total){
   sheetMode='invoice';
@@ -872,5 +909,20 @@ $('sendBtn').onclick=startSend;
 if(!load('den_snap',null)&&(tasks.length||days.length))takeSnapshot();
 renderDnes();
 handleHashImport();
-if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');
+function setupSW(){
+  if(!('serviceWorker' in navigator))return;
+  if(navigator.serviceWorker.controller){
+    navigator.serviceWorker.addEventListener('controllerchange',()=>{
+      if(setupSW._reloading)return;setupSW._reloading=true;location.reload();
+    });
+  }
+  const ping=reg=>{try{reg.update()}catch(e){}};
+  navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(reg=>{
+    ping(reg);
+    document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')ping(reg)});
+    window.addEventListener('focus',()=>ping(reg));
+    window.addEventListener('pageshow',()=>ping(reg));
+  }).catch(()=>{});
+}
+setupSW();
 })();
