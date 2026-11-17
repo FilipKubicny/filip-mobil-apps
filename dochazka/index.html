@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Docházka</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Docházka">
+<meta name="theme-color" content="#f2f4f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b111b" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<h1>Docházka</h1>
+<div class="card">
+  <div class="field"><label for="date">Datum</label><input type="date" id="date"></div>
+  <div class="row field">
+    <div><label for="from">Od</label><input type="time" id="from" step="300"></div>
+    <div><label for="to">Do</label><input type="time" id="to" step="300"></div>
+  </div>
+</div>
+<div class="card total" id="total">Odpracováno: –<small>pauza 30 min odečtena</small></div>
+<div class="card">
+  <div class="field"><label for="work">Na čem jsem pracoval</label><textarea id="work" placeholder="Každá činnost na nový řádek"></textarea></div>
+  <div class="field"><label for="notes">Poznámky</label><textarea id="notes" placeholder="Např. nákup dveří 4 555 Kč"></textarea><div class="warn" id="notesWarn" hidden></div></div>
+</div>
+<button class="primary" id="send">Uložit a odeslat</button>
+<p class="muted" style="text-align:center">Otevře se e-mail s vyplněným záznamem, stačí ho odeslat.</p>
+<h2>Poslední záznamy</h2>
+<div class="card" id="history"><div class="muted">Zatím žádné záznamy.</div></div>
+<div class="toast" id="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>
