@@ -18,7 +18,10 @@
 <body>
 <header class="top">
   <h1>Úkoly</h1>
-  <button type="button" class="send-btn" id="send">Odeslat přehled</button>
+  <div class="top-actions">
+    <button type="button" class="ghost-btn" id="importBtn">Vložit data</button>
+    <button type="button" class="send-btn" id="send">Odeslat přehled</button>
+  </div>
 </header>
 
 <nav class="tabs" id="tabs" role="tablist" aria-label="Období"></nav>
@@ -64,6 +67,19 @@
   </div>
 </div>
 
+<div class="overlay" id="importOverlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="importTitle">
+    <div class="sheet-handle"></div>
+    <h2 id="importTitle">Vložit data</h2>
+    <p class="muted dates">Vlož odkaz nebo kód s úkoly. Pokud ho máš ve schránce, zkusím ho načíst sám.</p>
+    <div class="field">
+      <label for="importText">Odkaz nebo kód</label>
+      <textarea id="importText" rows="6" placeholder="Vlož sem odkaz nebo kód"></textarea>
+    </div>
+    <button type="button" class="primary" id="importGo">Nahrát</button>
+    <div class="actions"><button type="button" class="secondary" id="importCancel">Zrušit</button></div>
+  </div>
+</div>
 <div class="toast" id="toast" role="status"></div>
 <script src="app.js"></script>
 </body>

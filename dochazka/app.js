@@ -136,6 +136,10 @@ let view='entry';
 let monthYM=todayISO().slice(0,7);
 let sheetMode=null,sheetTarget=null;
 
+function updateImportHint(){
+  const el=$('importHint');
+  if(el)el.hidden=days.length>0;
+}
 function setView(v){
   view=v;
   document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on',b.dataset.view===v));
@@ -144,6 +148,7 @@ function setView(v){
   $('view-invoice').hidden=v!=='invoice';
   if(v==='month')renderMonth();
   if(v==='invoice')renderInvoice();
+  updateImportHint();
 }
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>setView(b.dataset.view));
 
@@ -333,7 +338,13 @@ function renderMonth(){
   $('monthWorkdays').innerHTML=wdHtml;
 
   const box=$('monthDays');box.innerHTML='';
-  if(!list.length)box.innerHTML='<div class="card muted">V tomhle měsíci zatím nic není.</div>';
+  if(!list.length){
+    const empty=days.length
+      ? '<div class="card muted">V tomhle měsíci zatím nic není.</div>'
+      : '<div class="card"><p class="muted" style="margin:0 0 12px">Zatím tu nejsou žádné dny. Vlož odkaz nebo kód s docházkou.</p><button type="button" class="primary" id="monthImport">Vložit data</button></div>';
+    box.innerHTML=empty;
+    const b=$('monthImport');if(b)b.onclick=startPasteImport;
+  }else
   list.forEach(d=>{
     const b=document.createElement('button');b.type='button';b.className='day'+(d.nonbillable?' nb':'');
     const when=(d.spans||[]).map(([f,t])=>f+'–'+t).join(', ');
@@ -395,9 +406,11 @@ $('settingsBtn').onclick=()=>{
   openSheet('Nastavení',
     '<div class="field"><label for="sBilled">Vyfakturováno do (včetně)</label><input type="date" id="sBilled" value="'+esc(settings.billedUntil)+'"></div>'+
     '<div class="field"><label for="sSpecial">Konec přechodného období</label><input type="date" id="sSpecial" value="'+esc(settings.specialEnd)+'"><div class="muted">Teď 16. 10. – 30. 11. 2026, potom celé kalendářní měsíce.</div></div>'+
-    '<div class="field"><label for="sRate">Hodinovka v Kč</label><input type="number" id="sRate" min="0" step="1" value="'+esc(settings.rate)+'"></div>',
+    '<div class="field"><label for="sRate">Hodinovka v Kč</label><input type="number" id="sRate" min="0" step="1" value="'+esc(settings.rate)+'"></div>'+
+    '<div class="actions"><button type="button" class="secondary" id="sImport">Vložit data</button></div>',
     {mode:'settings'}
   );
+  const ib=$('sImport');if(ib)ib.onclick=()=>{closeSheet();startPasteImport()};
 };
 function openMarkBilled(p,openMin,expSum,total){
   openSheet('Zapsat fakturu',
@@ -432,14 +445,41 @@ function b64urlDecode(s){
   for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
   return new TextDecoder().decode(bytes);
 }
-function mergeImported(data){
+function extractImportPayload(raw){
+  let s=String(raw||'').trim().replace(/^[\s'"`]+|[\s'"`]+$/g,'');
+  const hashAt=s.lastIndexOf('#import=');
+  const plainAt=s.lastIndexOf('import=');
+  if(hashAt>=0)s=s.slice(hashAt+8);
+  else if(plainAt>=0)s=s.slice(plainAt+7);
+  s=s.replace(/\s+/g,'');
+  try{s=decodeURIComponent(s)}catch(e){}
+  return s;
+}
+function parseImportedData(raw){
+  let data=JSON.parse(b64urlDecode(extractImportPayload(raw)));
+  if(Array.isArray(data))data={days:data};
+  if(!data||typeof data!=='object')return {days:[],expenses:[],invoices:[]};
   const incomingDays=(data.days||[]).map(x=>normalizeDay(Object.assign({imported:true},x))).filter(Boolean);
   const incomingExp=(data.expenses||[]).map(normalizeExp).filter(Boolean);
   const incomingInv=(data.invoices||data.invoiced||[]).map(normalizeInv).filter(Boolean);
-  const up=(arr,item,key)=>{const i=arr.findIndex(x=>key(x,item));if(i>=0)arr[i]=Object.assign({},arr[i],item,{id:arr[i].id});else arr.push(item)};
-  incomingDays.forEach(d=>up(days,d,(a,b)=>a.date===b.date));
-  incomingExp.forEach(d=>up(expenses,d,(a,b)=>a.date===b.date&&a.what===b.what));
-  incomingInv.forEach(d=>up(invoices,d,(a,b)=>a.date===b.date&&a.what===b.what));
+  return {days:incomingDays,expenses:incomingExp,invoices:incomingInv,billedUntil:data.billedUntil,specialEnd:data.specialEnd,rate:data.rate};
+}
+function importSummary(data){
+  const n=(data.days||[]).length,ex=(data.expenses||[]).length,inv=(data.invoices||[]).length;
+  const parts=[];
+  if(n)parts.push(n+' '+(n===1?'den':n<5?'dny':'dní'));
+  if(ex)parts.push(ex+' '+(ex===1?'výdaj':ex<5?'výdaje':'výdajů'));
+  if(inv)parts.push(inv+' '+(inv===1?'fakturu':inv<5?'faktury':'faktur'));
+  return {days:n,ex,inv,parts};
+}
+function applyImportedData(data){
+  const s=importSummary(data);
+  if(!s.parts.length){toast('V odkazu nejsou žádná data');return false}
+  const existing=days.length||expenses.length||invoices.length;
+  if(!confirm('Nahrát '+s.parts.join(', ')+'?'+(existing?' Stávající se nahradí.':'')))return false;
+  days=(data.days||[]).slice();
+  expenses=(data.expenses||[]).slice();
+  invoices=(data.invoices||[]).slice();
   days.sort((a,b)=>a.date.localeCompare(b.date));
   expenses.sort((a,b)=>a.date.localeCompare(b.date));
   invoices.sort((a,b)=>a.date.localeCompare(b.date));
@@ -447,29 +487,56 @@ function mergeImported(data){
   if(data.specialEnd)settings.specialEnd=data.specialEnd;
   if(data.rate)settings.rate=Number(data.rate);
   persist();
-  return{days:incomingDays.length,expenses:incomingExp.length,invoices:incomingInv.length};
+  const last=days[days.length-1];if(last)monthYM=last.date.slice(0,7);
+  updateTotal();updateImportHint();
+  if(view==='month')renderMonth();
+  if(view==='invoice')renderInvoice();
+  toast('Načteno: '+s.parts.join(', '));
+  return true;
 }
 function handleImport(){
   const hash=location.hash||'';
-  const m=hash.match(/^#?import=(.+)$/);
-  if(!m)return;
-  let data;
-  try{data=JSON.parse(b64urlDecode(decodeURIComponent(m[1])))}catch(e){history.replaceState(null,'',location.pathname+location.search);toast('Import se nepovedl');return}
+  if(!/(?:^|#)import=/.test(hash))return;
   history.replaceState(null,'',location.pathname+location.search);
-  if(Array.isArray(data))data={days:data};
-  const n=(data.days||[]).length,x=(data.expenses||[]).length,i=(data.invoices||data.invoiced||[]).length;
-  if(!n&&!x&&!i){toast('V odkazu nejsou žádná data');return}
-  const parts=[];
-  if(n)parts.push(n+' '+(n===1?'den':n<5?'dny':'dní'));
-  if(x)parts.push(x+' '+(x===1?'výdaj':x<5?'výdaje':'výdajů'));
-  if(i)parts.push(i+' '+(i===1?'fakturu':i<5?'faktury':'faktur'));
-  if(!confirm('Nahrát '+parts.join(', ')+'?'))return;
-  mergeImported(data);
-  monthYM=(days[0]&&days[days.length-1].date.slice(0,7))||monthYM;
-  const last=days[days.length-1];if(last)monthYM=last.date.slice(0,7);
-  updateTotal();if(view==='month')renderMonth();if(view==='invoice')renderInvoice();
-  toast('Načteno: '+parts.join(', '));
+  let data;
+  try{data=parseImportedData(hash)}catch(e){toast('Import se nepovedl');return}
+  applyImportedData(data);
 }
+function openImportSheet(prefill){
+  $('importText').value=prefill||'';
+  $('importOverlay').hidden=false;
+  document.body.classList.add('locked');
+  setTimeout(()=>$('importText').focus(),50);
+}
+function closeImportSheet(){
+  $('importOverlay').hidden=true;
+  if($('overlay').hidden)document.body.classList.remove('locked');
+}
+async function startPasteImport(){
+  let text='';
+  try{
+    if(navigator.clipboard&&navigator.clipboard.readText)text=(await navigator.clipboard.readText())||'';
+  }catch(e){}
+  text=String(text).trim();
+  if(text){
+    try{
+      const data=parseImportedData(text);
+      if(importSummary(data).parts.length&&applyImportedData(data))return;
+    }catch(e){}
+  }
+  openImportSheet(text);
+}
+$('importBtn').onclick=startPasteImport;
+const entryImp=$('entryImport');if(entryImp)entryImp.onclick=startPasteImport;
+$('importCancel').onclick=closeImportSheet;
+$('importOverlay').addEventListener('click',e=>{if(e.target===$('importOverlay'))closeImportSheet()});
+$('importGo').onclick=()=>{
+  const text=$('importText').value.trim();
+  if(!text){toast('Vlož odkaz nebo kód');$('importText').focus();return}
+  let data;
+  try{data=parseImportedData(text)}catch(e){toast('Import se nepovedl');return}
+  if(applyImportedData(data))closeImportSheet();
+};
 
 (function initForm(){
   const d=load('dochazka_draft',null);
@@ -485,6 +552,7 @@ function handleImport(){
   if(!d&&findDay($('date').value))loadDateIntoForm($('date').value,false);
   updateTotal();
 })();
+updateImportHint();
 handleImport();
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');
 })();

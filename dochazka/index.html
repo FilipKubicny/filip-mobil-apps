@@ -18,7 +18,10 @@
 <body>
 <header class="top">
   <h1>Docházka</h1>
-  <button type="button" class="icon-btn" id="settingsBtn" aria-label="Nastavení">Nastavení</button>
+  <div class="top-actions">
+    <button type="button" class="icon-btn" id="importBtn">Vložit data</button>
+    <button type="button" class="icon-btn" id="settingsBtn" aria-label="Nastavení">Nastavení</button>
+  </div>
 </header>
 <nav class="tabs" id="tabs" role="tablist" aria-label="Sekce">
   <button type="button" class="tab on" data-view="entry" role="tab">Zápis</button>
@@ -27,6 +30,10 @@
 </nav>
 
 <section id="view-entry">
+  <div class="card" id="importHint" hidden>
+    <p style="margin:0 0 12px">Zatím tu nejsou žádné dny. Vlož odkaz nebo kód s docházkou.</p>
+    <button type="button" class="primary" id="entryImport">Vložit data</button>
+  </div>
   <div class="card">
     <div class="field"><label for="date">Datum</label><input type="date" id="date"></div>
     <div class="row field">
@@ -92,6 +99,19 @@
   </div>
 </div>
 
+<div class="overlay" id="importOverlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="importTitle">
+    <div class="sheet-handle"></div>
+    <h2 id="importTitle">Vložit data</h2>
+    <p class="muted">Vlož odkaz nebo kód s docházkou. Pokud ho máš ve schránce, zkusím ho načíst sám.</p>
+    <div class="field">
+      <label for="importText">Odkaz nebo kód</label>
+      <textarea id="importText" rows="6" placeholder="Vlož sem odkaz nebo kód"></textarea>
+    </div>
+    <button type="button" class="primary" id="importGo">Nahrát</button>
+    <div class="actions"><button type="button" class="secondary" id="importCancel">Zrušit</button></div>
+  </div>
+</div>
 <div class="toast" id="toast" role="status"></div>
 <script src="app.js"></script>
 </body>

@@ -142,9 +142,11 @@ function renderList(){
   const empty=$('empty');
   if(!items.length){
     empty.hidden=false;
-    empty.textContent=tasks.length
+    const msg=tasks.length
       ? (tab==='done'?'Zatím žádné hotové úkoly v tomto filtru.':'V tomhle období zatím nic není.')
-      : 'Zatím žádné úkoly. Přidej první tlačítkem dole.';
+      : 'Zatím žádné úkoly. Vlož uložený kód, nebo přidej první tlačítkem dole.';
+    empty.innerHTML=esc(msg)+(tasks.length?'':'<div><button type="button" class="primary import-cta" id="emptyImport">Vložit data</button></div>');
+    const b=$('emptyImport');if(b)b.onclick=startPasteImport;
     return;
   }
   empty.hidden=true;
@@ -350,51 +352,73 @@ function b64urlDecode(s){
   return new TextDecoder().decode(bytes);
 }
 
-function mergeImported(incoming){
-  const byId=new Map(tasks.map(t=>[t.id,t]));
-  const byText=new Map(tasks.map(t=>[t.text.toLowerCase(),t]));
-  let added=0,updated=0;
-  incoming.forEach(t=>{
-    let cur=byId.get(t.id);
-    if(!cur)cur=byText.get(t.text.toLowerCase());
-    if(cur){
-      cur.text=t.text;cur.cat=t.cat;cur.bucket=t.bucket;cur.note=t.note;cur.status=t.status;
-      cur.created=t.created||cur.created;
-      cur.doneAt=t.status==='done'?(t.doneAt||cur.doneAt||todayISO()):'';
-      cur.prevStatus=t.prevStatus||cur.prevStatus;
-      cur.updated=Date.now();
-      updated++;
-    }else{
-      t.sentNew=true;
-      t.sentDone=t.status==='done';
-      tasks.push(t);
-      added++;
-    }
-  });
-  persist();
-  return {added,updated};
+function extractImportPayload(raw){
+  let s=String(raw||'').trim().replace(/^[\s'"`]+|[\s'"`]+$/g,'');
+  const hashAt=s.lastIndexOf('#import=');
+  const plainAt=s.lastIndexOf('import=');
+  if(hashAt>=0)s=s.slice(hashAt+8);
+  else if(plainAt>=0)s=s.slice(plainAt+7);
+  s=s.replace(/\s+/g,'');
+  try{s=decodeURIComponent(s)}catch(e){}
+  return s;
 }
-
+function parseImportedTasks(raw){
+  const parsed=JSON.parse(b64urlDecode(extractImportPayload(raw)));
+  return (Array.isArray(parsed)?parsed:[]).map(normalize).filter(Boolean);
+}
+function applyImportedTasks(incoming){
+  if(!incoming.length){toast('V odkazu nejsou žádné úkoly');return false}
+  const msg='Nahrát '+incoming.length+' úkolů?'+(tasks.length?' Stávající se nahradí.':'');
+  if(!confirm(msg))return false;
+  incoming.forEach(t=>{t.sentNew=true;t.sentDone=t.status==='done'});
+  tasks=incoming;
+  persist();
+  render();
+  toast('Načteno '+incoming.length+' úkolů');
+  return true;
+}
 function handleImport(){
   const hash=location.hash||'';
-  const m=hash.match(/^#?import=(.+)$/);
-  if(!m)return;
-  let incoming;
-  try{
-    const parsed=JSON.parse(b64urlDecode(decodeURIComponent(m[1])));
-    incoming=(Array.isArray(parsed)?parsed:[]).map(normalize).filter(Boolean);
-  }catch(e){
-    history.replaceState(null,'',location.pathname+location.search);
-    toast('Import se nepovedl');
-    return;
-  }
+  if(!/(?:^|#)import=/.test(hash))return;
   history.replaceState(null,'',location.pathname+location.search);
-  if(!incoming.length){toast('V odkazu nejsou žádné úkoly');return}
-  if(!confirm('Nahrát '+incoming.length+' úkolů?'))return;
-  const r=mergeImported(incoming);
-  render();
-  toast('Načteno: '+r.added+' nových, '+r.updated+' upravených');
+  let incoming;
+  try{incoming=parseImportedTasks(hash)}catch(e){toast('Import se nepovedl');return}
+  applyImportedTasks(incoming);
 }
+function openImportSheet(prefill){
+  $('importText').value=prefill||'';
+  $('importOverlay').hidden=false;
+  document.body.classList.add('locked');
+  setTimeout(()=>$('importText').focus(),50);
+}
+function closeImportSheet(){
+  $('importOverlay').hidden=true;
+  if($('overlay').hidden)document.body.classList.remove('locked');
+}
+async function startPasteImport(){
+  let text='';
+  try{
+    if(navigator.clipboard&&navigator.clipboard.readText)text=(await navigator.clipboard.readText())||'';
+  }catch(e){}
+  text=String(text).trim();
+  if(text){
+    try{
+      const incoming=parseImportedTasks(text);
+      if(incoming.length&&applyImportedTasks(incoming))return;
+    }catch(e){}
+  }
+  openImportSheet(text);
+}
+$('importBtn').onclick=startPasteImport;
+$('importCancel').onclick=closeImportSheet;
+$('importOverlay').addEventListener('click',e=>{if(e.target===$('importOverlay'))closeImportSheet()});
+$('importGo').onclick=()=>{
+  const text=$('importText').value.trim();
+  if(!text){toast('Vlož odkaz nebo kód');$('importText').focus();return}
+  let incoming;
+  try{incoming=parseImportedTasks(text)}catch(e){toast('Import se nepovedl');return}
+  if(applyImportedTasks(incoming))closeImportSheet();
+};
 
 render();
 handleImport();
