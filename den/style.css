@@ -135,3 +135,5 @@ h1 .ver{display:inline-block;margin-left:8px;font-size:13px;font-weight:600;lett
 .note-actions button.danger{color:var(--danger);background:transparent}
 #todayNotesList .note{box-shadow:none;background:var(--bg);margin:8px 0 0}
 #noteCancelEdit{margin-top:8px}
+
+.pill.bot{color:var(--accent);background:color-mix(in srgb,var(--accent) 16%,transparent)}

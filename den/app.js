@@ -19,7 +19,7 @@ const BUCKETS=[
   {id:'long',name:'Dlouhodobé',short:'Dlouhodobé'}
 ];
 const STATUSES=[{id:'open',name:'Otevřené'},{id:'wip',name:'Rozpracované'},{id:'wait',name:'Čeká'},{id:'done',name:'Hotovo'}];
-const APP_VERSION=4;
+const APP_VERSION=5;
 const CAT_REPAIR={'432daf02':'sva','7e50a6ef':'sva','97d85896':'sva','c47f2c69':'zam','59a4c2fe':'zam','b39cb988':'sva','727076df':'sva','83367aa7':'fre','6a18e6c6':'fre','79486842':'fre','83549cb7':'lin','3ef16c57':'ost','6443a152':'ost','738ca1f6':'fre','66c017e9':'zam','a1b882a7':'zam','249f1330':'zam','9c9d5258':'zam','354dbdf3':'zam','b9e025f0':'pul','4185f791':'pul','fbe7d7cd':'pul','aab0cba9':'sva','c6bfbc8d':'sva','4aeb6c08':'sva','a3d38c38':'sva','6e49be28':'ost','5b60e232':'ost','ee532219':'lin','deafdb98':'lin','527a770f':'inv','f19d2292':'inv','f2e4f1b8':'sva','875b1851':'fre','c0e70d5':'inv','802e913d':'ost'};
 function textKey(s){return String(s||'').trim().toLowerCase().replace(/[\u2010-\u2015\u2212]/g,'-').replace(/\s+/g,' ')}
 function fnv1a(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return (h>>>0).toString(16)}
@@ -105,7 +105,8 @@ function normalizeTask(raw){
   if(!STATUSES.some(s=>s.id===status))status='open';
   const created=toISOdate(raw.created||raw.cr)||todayISO();
   const doneAt=status==='done'?(toISOdate(raw.doneAt||raw.d||raw.done_date)||created):'';
-  return{id:String(raw.id||uid('t')),text,cat,bucket,note:String(raw.note||raw.n||'').trim(),status,created,doneAt,prevStatus:raw.prevStatus||'open',updated:raw.updated||Date.now()};
+  const from=raw.from||raw.src||'';
+  return{id:String(raw.id||uid('t')),text,cat,bucket,note:String(raw.note||raw.n||'').trim(),status,created,doneAt,prevStatus:raw.prevStatus||'open',updated:raw.updated||Date.now(),from:from==='bot'||from==='isbot'||from==='IS BOT'?'bot':from};
 }
 function normalizeDay(raw){
   if(!raw||!raw.date)return null;
@@ -350,7 +351,7 @@ function taskCard(t,opts){
   d.innerHTML='<button type="button" class="chk'+(t.status==='done'?' on':'')+'" aria-label="Hotovo">'+(t.status==='done'?'✓':'')+'</button>'+
     '<div class="body"><div class="ttext">'+esc(t.text)+'</div>'+(t.note?'<div class="tnote">'+esc(t.note)+'</div>':'')+
     '<div class="tmeta"><span class="pill"><span class="dot" style="background:'+c.color+'"></span>'+esc(c.name)+'</span>'+
-    '<span class="pill '+esc(t.status)+'">'+esc(st.name)+'</span></div></div>';
+    '<span class="pill '+esc(t.status)+'">'+esc(st.name)+'</span>'+(t.from==='bot'?'<span class="pill bot">od IS BOTa</span>':'')+'</div></div>';
   d.querySelector('.chk').onclick=ev=>{ev.stopPropagation();toggleDone(t)};
   if(!opts||opts.edit!==false)d.querySelector('.body').onclick=()=>openTaskSheet(t);
   return d;
@@ -451,7 +452,11 @@ $('sheetSave').onclick=()=>{
   if(sheetMode==='settings'){
     const b=$('sBilled').value,s=$('sSpecial').value,r=Number($('sRate').value);
     if(!b||!s||!isFinite(r)||r<0){toast('Zkontroluj nastavení');return}
-    settings.billedUntil=b;settings.specialEnd=s;settings.rate=r;persist();closeSheet();if(view==='dochazka')renderDochazka();updateTotal();toast('Nastavení uloženo');
+    settings.billedUntil=b;settings.specialEnd=s;settings.rate=r;persist();
+    const key=($('sInboxKey')&&$('sInboxKey').value)||'';
+    setInboxKeyRaw(key);
+    closeSheet();if(view==='dochazka')renderDochazka();updateTotal();toast('Nastavení uloženo');
+    pollInbox('force');
     return;
   }
   if(sheetMode==='invoice'){
@@ -840,6 +845,160 @@ function metric(v,l){return '<div class="metric"><div class="v">'+esc(v)+'</div>
 $('prevMonth').onclick=()=>{const d=parseISO(monthYM+'-01');d.setMonth(d.getMonth()-1);monthYM=toISO(d).slice(0,7);renderDochazka()};
 $('nextMonth').onclick=()=>{const d=parseISO(monthYM+'-01');d.setMonth(d.getMonth()+1);monthYM=toISO(d).slice(0,7);renderDochazka()};
 
+let inboxHint='', inboxBusy=false, lastInboxAt=0;
+function setInboxHint(s){
+  inboxHint=s||'';
+  const line=$('inboxHintLine');
+  if(line)line.textContent=inboxHint;
+  else if(inboxHint&&$('sInboxKey')){
+    const p=document.createElement('p');p.className='muted';p.id='inboxHintLine';p.textContent=inboxHint;
+    const field=$('sInboxKey').closest('.field');
+    if(field&&field.parentNode)field.after(p);
+  }
+}
+function normalizeInboxKey(s){return String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'')}
+function getInboxKeyRaw(){return String(load('den_inbox_key','')||'')}
+function setInboxKeyRaw(v){save('den_inbox_key',String(v||'').trim())}
+function getInboxKey(){return normalizeInboxKey(getInboxKeyRaw())}
+function loadAppliedInbox(){const a=load('den_inbox_applied',[]);return Array.isArray(a)?a:[]}
+function saveAppliedInbox(ids){save('den_inbox_applied',ids.slice(-400))}
+function b64toBytes(s){
+  const bin=atob(s);const u=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);
+  return u;
+}
+async function decryptInboxFile(obj,pass){
+  const salt=b64toBytes(obj.salt),iv=b64toBytes(obj.iv),ct=b64toBytes(obj.ct);
+  const enc=new TextEncoder();
+  const material=await crypto.subtle.importKey('raw',enc.encode(normalizeInboxKey(pass)),'PBKDF2',false,['deriveKey']);
+  const key=await crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:200000,hash:'SHA-256'},material,{name:'AES-GCM',length:256},false,['decrypt']);
+  const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv},key,ct);
+  return JSON.parse(new TextDecoder().decode(pt));
+}
+function findTaskMatch(id,text){
+  if(id){const t=tasks.find(x=>x.id===String(id));if(t)return t}
+  if(text){const k=String(text).trim().toLowerCase();return tasks.find(x=>x.text.trim().toLowerCase()===k)}
+  return null;
+}
+function payloadFromPush(data){
+  if(Array.isArray(data))data={tasks:data};
+  if(!data||typeof data!=='object')data={};
+  const noteSrc=Array.isArray(data.poznamky)?data.poznamky:(Array.isArray(data.notes)?data.notes:[]);
+  return{
+    tasks:(data.tasks||[]).map(x=>normalizeTask(Object.assign({},x,{from:x.from||'bot'}))).filter(Boolean),
+    days:(data.days||[]).map(x=>normalizeDay(Object.assign({imported:true},x))).filter(Boolean),
+    expenses:(data.expenses||[]).map(normalizeExp).filter(Boolean),
+    invoices:(data.invoices||data.invoiced||[]).map(normalizeExp).filter(Boolean),
+    reminders:(data.reminders||data.pripominky||[]).map(normalizeRem).filter(Boolean),
+    poznamky:noteSrc.map(normalizeNote).filter(Boolean),
+    done:Array.isArray(data.done)?data.done:[],
+    update:Array.isArray(data.update)?data.update:[],
+    billedUntil:data.billedUntil,specialEnd:data.specialEnd,rate:data.rate
+  };
+}
+function applyInboxPayload(raw){
+  const p=payloadFromPush(raw||{});
+  const n={tasks:0,reminders:0,poznamky:0,days:0,expenses:0,done:0,update:0};
+  p.tasks.forEach(t=>{
+    t.from='bot';
+    const ex=findTaskMatch(t.id,t.text);
+    if(ex){if(!ex.from)ex.from='bot'}
+    else{tasks.push(t);n.tasks++}
+  });
+  p.update.forEach(rawU=>{
+    const ex=findTaskMatch(rawU.id,rawU.text||rawU.t);
+    if(!ex)return;
+    const merged=normalizeTask(Object.assign({},ex,rawU,{id:ex.id,text:rawU.text||rawU.t||ex.text,from:ex.from||'bot'}));
+    if(!merged)return;
+    Object.assign(ex,merged,{id:ex.id});
+    n.update++;
+  });
+  p.done.forEach(key=>{
+    const k=String(key||'').trim();if(!k)return;
+    const ex=findTaskMatch(k,k);
+    if(ex&&ex.status!=='done'){ex.prevStatus=ex.status;ex.status='done';ex.doneAt=todayISO();ex.updated=Date.now();n.done++}
+  });
+  p.reminders.forEach(r=>{
+    const i=reminders.findIndex(a=>a.id===r.id||(a.text===r.text&&a.when===r.when));
+    if(i>=0)return;
+    reminders.push(r);n.reminders++;
+  });
+  p.poznamky.forEach(note=>{
+    const i=notes.findIndex(a=>a.id===note.id||(a.text===note.text&&a.at===note.at));
+    if(i>=0)return;
+    notes.push(note);n.poznamky++;
+  });
+  p.days.forEach(d=>{
+    const ex=days.find(a=>a.date===d.date);
+    if(ex)return;
+    days.push(d);n.days++;
+  });
+  p.expenses.forEach(e=>{
+    const ex=expenses.find(a=>a.date===e.date&&a.what===e.what);
+    if(ex)return;
+    expenses.push(e);n.expenses++;
+  });
+  if(p.billedUntil)settings.billedUntil=p.billedUntil;
+  if(p.specialEnd)settings.specialEnd=p.specialEnd;
+  if(p.rate)settings.rate=Number(p.rate);
+  return n;
+}
+function inboxToast(n){
+  const parts=[];
+  const add=(c,one,few,many)=>{if(c)parts.push(c+' '+(c===1?one:c<5?few:many))};
+  add(n.tasks,'úkol','úkoly','úkolů');
+  add(n.reminders,'připomínku','připomínky','připomínek');
+  add(n.poznamky,'poznámku','poznámky','poznámek');
+  add(n.days,'den','dny','dní');
+  add(n.expenses,'výdaj','výdaje','výdajů');
+  add(n.done,'hotový úkol','hotové úkoly','hotových úkolů');
+  add(n.update,'úpravu','úpravy','úprav');
+  if(!parts.length)return;
+  toast('Nové od IS BOTa: '+parts.join(', '));
+}
+function sumCounts(a,b){
+  const o={};Object.keys(a).concat(Object.keys(b)).forEach(k=>o[k]=(a[k]||0)+(b[k]||0));
+  return o;
+}
+async function pollInbox(reason){
+  const key=getInboxKey();
+  if(!key)return;
+  if(inboxBusy)return;
+  if(reason!=='force'&&Date.now()-lastInboxAt<2000)return;
+  inboxBusy=true;lastInboxAt=Date.now();
+  try{
+    const r=await fetch('inbox.enc?t='+Date.now(),{cache:'no-store'});
+    if(!r.ok){setInboxHint('Kód nesedí, nebo inbox nejde načíst.');return}
+    const obj=await r.json();
+    if(!obj||!obj.salt||!obj.iv||!obj.ct){setInboxHint('Kód nesedí, nebo inbox nejde načíst.');return}
+    let box;
+    try{box=await decryptInboxFile(obj,key)}
+    catch(e){setInboxHint('Kód nesedí, nebo inbox nejde načíst.');return}
+    setInboxHint('');
+    const seen=new Set(loadAppliedInbox());
+    const fresh=(box.messages||[]).filter(m=>m&&m.id&&!seen.has(String(m.id)))
+      .sort((a,b)=>String(a.ts||'').localeCompare(String(b.ts||'')));
+    if(!fresh.length)return;
+    let totals={tasks:0,reminders:0,poznamky:0,days:0,expenses:0,done:0,update:0};
+    fresh.forEach(m=>{
+      totals=sumCounts(totals,applyInboxPayload(m.payload||{}));
+      seen.add(String(m.id));
+    });
+    saveAppliedInbox([...seen]);
+    persist();
+    renderDnes();
+    if(view==='ukoly')renderTasks();
+    if(view==='dochazka')renderDochazka();
+    if(view==='rems')renderRems();
+    if(view==='notes')renderNotes();
+    inboxToast(totals);
+  }catch(e){
+    setInboxHint('Kód nesedí, nebo inbox nejde načíst.');
+  }finally{
+    inboxBusy=false;
+  }
+}
+
 function openSettings(){
   sheetMode='settings';sheetTarget=null;
   $('sheetTitle').textContent='Nastavení';
@@ -847,6 +1006,8 @@ function openSettings(){
   $('sheetBody').innerHTML='<div class="field"><label for="sBilled">Vyfakturováno do (včetně)</label><input type="date" id="sBilled" value="'+esc(settings.billedUntil)+'"></div>'+
     '<div class="field"><label for="sSpecial">Konec přechodného období</label><input type="date" id="sSpecial" value="'+esc(settings.specialEnd)+'"><div class="muted">Teď 16. 10. – 30. 11. 2026, potom celé kalendářní měsíce.</div></div>'+
     '<div class="field"><label for="sRate">Hodinovka v Kč</label><input type="number" id="sRate" min="0" step="1" value="'+esc(settings.rate)+'"></div>'+
+    '<div class="field"><label for="sInboxKey">Kód pro IS BOTa</label><input type="text" id="sInboxKey" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX" value="'+esc(getInboxKeyRaw())+'"></div>'+
+    (inboxHint?'<p class="muted" id="inboxHintLine">'+esc(inboxHint)+'</p>':'')+
     '<p class="muted">Verze aplikace: '+APP_VERSION+'</p>'+
     '<button type="button" class="secondary" id="forceUpdate">Aktualizovat aplikaci</button>';
   $('overlay').hidden=false;document.body.classList.add('locked');
@@ -1168,6 +1329,10 @@ if(!load('den_snap',null)&&(tasks.length||days.length||notes.length))takeSnapsho
 restoreNoteDraft();
 renderDnes();
 handleHashImport();
+pollInbox('init');
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')pollInbox('visible')});
+window.addEventListener('focus',()=>pollInbox('focus'));
+setInterval(()=>{if(!document.hidden)pollInbox('timer')},5*60*1000);
 function setupSW(){
   if(!('serviceWorker' in navigator))return;
   if(navigator.serviceWorker.controller){

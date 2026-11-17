@@ -1,5 +1,5 @@
-const CACHE='den-v4';
-const FILES=['./','index.html','app.js','app.js?v=4','style.css','style.css?v=4','manifest.webmanifest','icon-180.png','icon-192.png','icon-512.png'];
+const CACHE='den-v5';
+const FILES=['./','index.html','app.js','app.js?v=5','style.css','style.css?v=5','manifest.webmanifest','icon-180.png','icon-192.png','icon-512.png'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(FILES)).then(()=>self.skipWaiting()))});
 self.addEventListener('activate',e=>{
   e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));
@@ -8,6 +8,10 @@ self.addEventListener('fetch',e=>{
   if(e.request.method!=='GET')return;
   const url=new URL(e.request.url);
   const path=url.pathname;
+  if(/inbox\.enc$/.test(path)){
+    e.respondWith(fetch(new Request(e.request,{cache:'no-store'})));
+    return;
+  }
   const isCode=/\.(?:js|css|html)$/.test(path)||path.endsWith('/')||path.endsWith('sw.js')||path.endsWith('manifest.webmanifest');
   const req=isCode?new Request(e.request,{cache:'no-store'}):e.request;
   e.respondWith(
