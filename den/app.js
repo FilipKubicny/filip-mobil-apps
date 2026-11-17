@@ -77,7 +77,7 @@ function toISOdate(v){
 function normalizeTask(raw){
   if(!raw||typeof raw!=='object')return null;
   const text=String(raw.text||raw.t||'').trim();if(!text)return null;
-  const cat=CATS.some(c=>c.id===(raw.cat||raw.category))?(raw.cat||raw.category):'ost';
+  const cat=CATS.some(c=>c.id===(raw.cat||raw.category||raw.c))?(raw.cat||raw.category||raw.c):'ost';
   const bucket=BUCKETS.some(b=>b.id===(raw.bucket||raw.b))?(raw.bucket||raw.b):'weeks';
   let status=raw.status||raw.s;if(status==='later')status='wait';if(raw.done===true)status='done';
   if(!STATUSES.some(s=>s.id===status))status='open';
@@ -146,7 +146,7 @@ function period(){
 function inPeriod(iso,p){return iso>=p.start&&iso<=p.end}
 function findDay(date){return days.find(d=>d.date===date)}
 
-let view='dnes', taskTab='tomorrow', taskFilter='all', monthYM=todayISO().slice(0,7);
+let view='dnes', taskTab='all', taskFilter='all', taskDoneOpen=true, monthYM=todayISO().slice(0,7);
 let sheetMode=null, sheetTarget=null, quickBucket='tomorrow', pendingMails=[];
 window.__lastMailto='';
 
@@ -257,19 +257,23 @@ function saveTodayAttendance(){
 }
 
 /* ---------- Tasks UI ---------- */
+function matchesCat(t){return taskFilter==='all'||t.cat===taskFilter}
+function sortTasks(arr){
+  const so={wip:0,open:1,wait:2,done:3};
+  return arr.sort((a,b)=>(so[a.status]-so[b.status])||String(a.created).localeCompare(String(b.created))||a.text.localeCompare(b.text,'cs'));
+}
 function visibleTasks(){
-  return tasks.filter(t=>{
-    if(taskFilter!=='all'&&t.cat!==taskFilter)return false;
+  return sortTasks(tasks.filter(t=>{
+    if(!matchesCat(t))return false;
+    if(taskTab==='all')return t.status!=='done';
     if(taskTab==='done')return t.status==='done';
     return t.status!=='done'&&t.bucket===taskTab;
-  }).sort((a,b)=>{
-    const so={wip:0,open:1,wait:2,done:3};
-    return (so[a.status]-so[b.status])||String(a.created).localeCompare(String(b.created))||a.text.localeCompare(b.text,'cs');
-  });
+  }));
 }
 function countBucket(id){
   return tasks.filter(t=>{
-    if(taskFilter!=='all'&&t.cat!==taskFilter)return false;
+    if(!matchesCat(t))return false;
+    if(id==='all')return true;
     if(id==='done')return t.status==='done';
     return t.status!=='done'&&t.bucket===id;
   }).length;
@@ -295,7 +299,8 @@ function taskCard(t,opts){
 }
 function renderTasks(){
   const tabs=$('taskTabs');tabs.innerHTML='';
-  BUCKETS.concat([{id:'done',name:'Hotovo',short:'Hotovo'}]).forEach(b=>{
+  const tabDefs=[{id:'all',name:'Vše',short:'Vše'}].concat(BUCKETS,[{id:'done',name:'Hotovo',short:'Hotovo'}]);
+  tabDefs.forEach(b=>{
     const btn=document.createElement('button');btn.type='button';btn.className='tab'+(taskTab===b.id?' on':'');
     btn.innerHTML=esc(b.short)+' <span class="n">'+countBucket(b.id)+'</span>';
     btn.onclick=()=>{taskTab=b.id;renderTasks()};
@@ -310,13 +315,45 @@ function renderTasks(){
     fil.appendChild(btn);
   });
   const list=$('taskList');list.innerHTML='';
-  const items=visibleTasks(),empty=$('taskEmpty');
-  if(!items.length){
+  const empty=$('taskEmpty');
+  const hasAny=tasks.some(matchesCat);
+  if(!hasAny){
     empty.hidden=false;
-    empty.textContent=tasks.length?(taskTab==='done'?'Zatím žádné hotové úkoly v tomto filtru.':'V tomhle období zatím nic není.'):'Zatím žádné úkoly. Přidej první, nebo vlož data.';
+    empty.textContent=tasks.length?'V tomhle filtru zatím nic není.':'Zatím žádné úkoly. Přidej první, nebo vlož data.';
     return;
   }
   empty.hidden=true;
+  if(taskTab==='all'){
+    let shown=0;
+    BUCKETS.forEach(b=>{
+      const group=sortTasks(tasks.filter(t=>matchesCat(t)&&t.status!=='done'&&t.bucket===b.id));
+      if(!group.length)return;
+      const h=document.createElement('h2');h.className='task-sec';h.textContent=b.name;
+      list.appendChild(h);
+      group.forEach(t=>list.appendChild(taskCard(t)));
+      shown+=group.length;
+    });
+    const done=sortTasks(tasks.filter(t=>matchesCat(t)&&t.status==='done'));
+    if(done.length){
+      const wrap=document.createElement('div');wrap.className='done-sec';
+      const btn=document.createElement('button');btn.type='button';btn.className='task-sec done-toggle';
+      btn.setAttribute('aria-expanded',taskDoneOpen?'true':'false');
+      btn.innerHTML='Hotovo <span class="n">'+done.length+'</span>';
+      const box=document.createElement('div');box.className='done-box';box.hidden=!taskDoneOpen;
+      done.forEach(t=>box.appendChild(taskCard(t)));
+      btn.onclick=()=>{taskDoneOpen=!taskDoneOpen;btn.setAttribute('aria-expanded',taskDoneOpen?'true':'false');box.hidden=!taskDoneOpen};
+      wrap.appendChild(btn);wrap.appendChild(box);list.appendChild(wrap);
+      shown+=done.length;
+    }
+    if(!shown){empty.hidden=false;empty.textContent='V tomhle filtru zatím nic není.';}
+    return;
+  }
+  const items=visibleTasks();
+  if(!items.length){
+    empty.hidden=false;
+    empty.textContent=taskTab==='done'?'Zatím žádné hotové úkoly v tomto filtru.':'V tomhle období zatím nic není.';
+    return;
+  }
   items.forEach(t=>list.appendChild(taskCard(t)));
 }
 
@@ -332,7 +369,7 @@ function paintChips(el,options,value,withDot,onpick){
 }
 function openTaskSheet(task){
   sheetMode='task';sheetTarget=task||null;
-  const draft=task?{text:task.text,cat:task.cat,bucket:task.bucket,status:task.status,note:task.note||''}:{text:'',cat:'ost',bucket:view==='ukoly'&&taskTab!=='done'?taskTab:'tomorrow',status:'open',note:''};
+  const draft=task?{text:task.text,cat:task.cat,bucket:task.bucket,status:task.status,note:task.note||''}:{text:'',cat:'ost',bucket:view==='ukoly'&&taskTab!=='done'&&taskTab!=='all'?taskTab:'tomorrow',status:'open',note:''};
   $('sheetTitle').textContent=task?'Upravit úkol':'Nový úkol';
   $('sheetDelete').hidden=!task;
   $('sheetBody').innerHTML='<div class="field"><label for="fText">Úkol</label><textarea id="fText" rows="3" placeholder="Co je potřeba udělat">'+esc(draft.text)+'</textarea></div>'+

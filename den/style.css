@@ -108,3 +108,12 @@ input[type=date],input[type=time],input[type=number]{min-height:48px}
 body.locked{overflow:hidden}
 #todayTasks .task,#todayRems .rem{box-shadow:none;background:var(--bg);margin-top:8px}
 #pendingMail{margin:8px 0 16px}
+
+.task-sec{font-size:13px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:16px 4px 8px;font-weight:600}
+#taskList .task-sec:first-child{margin-top:2px}
+.done-sec{margin-top:8px}
+.done-toggle{display:flex;align-items:center;gap:8px;width:100%;min-height:44px;margin:8px 0;padding:0 4px;border-radius:10px;text-align:left;font-size:13px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);background:transparent}
+.done-toggle .n{color:var(--muted);font-variant-numeric:tabular-nums}
+.done-toggle::after{content:'▾';margin-left:auto;font-size:12px;transition:transform .15s}
+.done-toggle[aria-expanded="false"]::after{transform:rotate(-90deg)}
+.done-box{display:flex;flex-direction:column;gap:8px}
