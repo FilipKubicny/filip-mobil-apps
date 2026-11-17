@@ -1,5 +1,5 @@
 # filip-mobil-apps
 
-Dvě jednoduché webové aplikace (PWA) pro iPhone: `dochazka/` a `ukoly/`. Čisté HTML/CSS/JS, bez build kroku.
+Hlavní aplikace je `den/` — jedna PWA na iPhone pro denní zápis docházky, úkolů a připomínek. Starší samostatné aplikace `dochazka/` a `ukoly/` zůstávají k dispozici.
 
-Data se ukládají jen v zařízení (localStorage) a přehled se dá odeslat e-mailem. Osobní záznamy do tohoto veřejného repozitáře nepatří.
+Čisté HTML/CSS/JS, bez build kroku. Data se ukládají jen v zařízení (localStorage) a denní přehled se odesílá e-mailem. Osobní záznamy do tohoto veřejného repozitáře nepatří.

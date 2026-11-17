@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Den</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Den">
+<meta name="theme-color" content="#4a8019" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b111b" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <h1>Den</h1>
+  <div class="top-actions">
+    <button type="button" class="ghost-btn" id="importBtn">Vložit data</button>
+    <button type="button" class="ghost-btn" id="settingsBtn">Nastavení</button>
+  </div>
+</header>
+
+<main id="view-dnes">
+  <p class="today-label" id="todayLabel"></p>
+
+  <section class="card">
+    <h2 class="incard">Docházka dnes</h2>
+    <div class="row field">
+      <div><label for="from1">Od</label><input type="time" id="from1" step="300"></div>
+      <div><label for="to1">Do</label><input type="time" id="to1" step="300"></div>
+    </div>
+    <div class="row field" id="span2row" hidden>
+      <div><label for="from2">Od (druhý čas)</label><input type="time" id="from2" step="300"></div>
+      <div><label for="to2">Do</label><input type="time" id="to2" step="300"></div>
+    </div>
+    <div class="actions tight">
+      <button type="button" class="secondary" id="toggleSpan2">+ Druhý čas</button>
+    </div>
+    <label class="check"><input type="checkbox" id="lunch" checked> Odečíst 30 min pauzu na oběd</label>
+    <label class="check"><input type="checkbox" id="nonbill"> Nefakturuje se / mimo SAPEKOR</label>
+    <div class="total" id="total">Odpracováno: –<small>pauza 30 min se odečte</small></div>
+    <div class="field"><label for="work">Na čem jsem pracoval</label><textarea id="work" rows="3" placeholder="Každá činnost na nový řádek"></textarea></div>
+    <div class="field"><label for="expWhat">Výdaj (volitelné)</label><input type="text" id="expWhat" placeholder="Za co"></div>
+    <div class="field"><label for="expCzk">Částka v Kč</label><input type="number" id="expCzk" min="0" step="1" inputmode="numeric" placeholder="0"></div>
+  </section>
+
+  <section class="card">
+    <h2 class="incard">Úkoly na teď</h2>
+    <div id="todayTasks"></div>
+    <div class="field" style="margin-top:10px">
+      <label for="quickTask">Nový úkol</label>
+      <textarea id="quickTask" rows="2" placeholder="Co je potřeba udělat"></textarea>
+    </div>
+    <div class="chips" id="quickBucket"></div>
+    <button type="button" class="secondary" id="quickAdd">Přidat úkol</button>
+  </section>
+
+  <section class="card">
+    <h2 class="incard">Na co mě upozorni</h2>
+    <div class="field"><label for="remText">Připomínka</label><textarea id="remText" rows="2" placeholder="Např. zítra 8:00 zavolat dodavateli"></textarea></div>
+    <div class="row field">
+      <div><label for="remDate">Den</label><input type="date" id="remDate"></div>
+      <div><label for="remTime">Čas</label><input type="time" id="remTime"></div>
+    </div>
+    <div class="chips" id="remChips"></div>
+    <button type="button" class="secondary" id="remAdd">Přidat připomínku</button>
+    <div id="todayRems"></div>
+  </section>
+
+  <section class="card">
+    <div class="field"><label for="dayNotes">Poznámky k dnešku</label><textarea id="dayNotes" rows="2" placeholder="Cokoliv dalšího pro IS BOTa"></textarea></div>
+  </section>
+
+  <button type="button" class="primary send-main" id="sendBtn">Odeslat IS BOTovi</button>
+  <p class="muted center" id="sendHint">Otevře se e-mail, stačí ho odeslat.</p>
+  <div id="pendingMail" hidden></div>
+</main>
+
+<main id="view-ukoly" hidden>
+  <nav class="tabs" id="taskTabs" role="tablist" aria-label="Období"></nav>
+  <div class="filters" id="taskFilters" role="group" aria-label="Kategorie"></div>
+  <div id="taskList"></div>
+  <p class="empty" id="taskEmpty" hidden></p>
+  <button type="button" class="fab" id="addTaskBtn">+ Přidat úkol</button>
+</main>
+
+<main id="view-dochazka" hidden>
+  <div class="monthbar">
+    <button type="button" class="ghost-btn" id="prevMonth" aria-label="Předchozí měsíc">‹</button>
+    <h2 id="monthTitle">Měsíc</h2>
+    <button type="button" class="ghost-btn" id="nextMonth" aria-label="Další měsíc">›</button>
+  </div>
+  <div class="metrics" id="monthMetrics"></div>
+  <div class="card" id="monthWorkdays"></div>
+  <h2>Odpracované dny</h2>
+  <div id="monthDays"></div>
+  <h2 id="monthExpTitle">Výdaje</h2>
+  <div id="monthExp"></div>
+  <h2>Příští faktura</h2>
+  <div class="card" id="nextInvoice"></div>
+  <h2>Vyfakturováno</h2>
+  <div id="pastInvoices"></div>
+</main>
+
+<main id="view-rems" hidden>
+  <div class="card">
+    <div class="field"><label for="remText2">Nová připomínka</label><textarea id="remText2" rows="2" placeholder="Na co mě upozornit"></textarea></div>
+    <div class="row field">
+      <div><label for="remDate2">Den</label><input type="date" id="remDate2"></div>
+      <div><label for="remTime2">Čas</label><input type="time" id="remTime2"></div>
+    </div>
+    <button type="button" class="secondary" id="remAdd2">Přidat připomínku</button>
+  </div>
+  <h2>Nadcházející</h2>
+  <div id="remUpcoming"></div>
+  <h2>Hotovo</h2>
+  <div id="remDone"></div>
+</main>
+
+<nav class="tabbar" role="tablist" aria-label="Sekce">
+  <button type="button" class="on" data-view="dnes">Dnes</button>
+  <button type="button" data-view="ukoly">Úkoly</button>
+  <button type="button" data-view="dochazka">Docházka</button>
+  <button type="button" data-view="rems">Připomínky</button>
+</nav>
+
+<div class="overlay" id="overlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <div class="sheet-handle"></div>
+    <h2 id="sheetTitle">Úkol</h2>
+    <div id="sheetBody"></div>
+    <button type="button" class="primary" id="sheetSave">Uložit</button>
+    <div class="actions">
+      <button type="button" class="secondary" id="sheetCancel">Zrušit</button>
+      <button type="button" class="danger" id="sheetDelete" hidden>Smazat</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="importOverlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="importTitle">
+    <div class="sheet-handle"></div>
+    <h2 id="importTitle">Vložit data</h2>
+    <p class="muted">Vlož odkaz nebo kód. Pokud ho máš ve schránce, zkusím ho načíst sám.</p>
+    <div class="field">
+      <label for="importText">Odkaz nebo kód</label>
+      <textarea id="importText" rows="6" placeholder="Vlož sem odkaz nebo kód"></textarea>
+    </div>
+    <button type="button" class="primary" id="importGo">Nahrát</button>
+    <div class="actions"><button type="button" class="secondary" id="importCancel">Zrušit</button></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status"></div>
+<script src="app.js"></script>
+</body>
+</html>
