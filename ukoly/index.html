@@ -8,7 +8,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Úkoly">
-<meta name="theme-color" content="#f2f4f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#4a8019" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0b111b" media="(prefers-color-scheme: dark)">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
@@ -16,20 +16,55 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<h1>Úkoly</h1>
-<div class="card">
-  <div class="field"><label for="add">Nový úkol</label><textarea id="add" style="min-height:70px" placeholder="Napiš úkol (víc úkolů = víc řádků)"></textarea></div>
-  <button class="primary" id="addBtn" style="min-height:50px">Přidat</button>
+<header class="top">
+  <h1>Úkoly</h1>
+  <button type="button" class="send-btn" id="send">Odeslat přehled</button>
+</header>
+
+<nav class="tabs" id="tabs" role="tablist" aria-label="Období"></nav>
+<div class="filters" id="filters" role="group" aria-label="Kategorie"></div>
+
+<main>
+  <div id="list"></div>
+  <p class="empty" id="empty" hidden></p>
+</main>
+
+<button type="button" class="fab" id="addBtn">+ Přidat úkol</button>
+
+<div class="overlay" id="overlay" hidden>
+  <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <div class="sheet-handle"></div>
+    <h2 id="sheetTitle">Nový úkol</h2>
+    <div class="field">
+      <label for="fText">Úkol</label>
+      <textarea id="fText" rows="3" placeholder="Co je potřeba udělat"></textarea>
+    </div>
+    <div class="field">
+      <span class="lbl">Kategorie</span>
+      <div class="chips" id="fCat"></div>
+    </div>
+    <div class="field">
+      <span class="lbl">Období</span>
+      <div class="chips" id="fBucket"></div>
+    </div>
+    <div class="field">
+      <span class="lbl">Stav</span>
+      <div class="chips" id="fStatus"></div>
+    </div>
+    <div class="field">
+      <label for="fNote">Poznámka</label>
+      <textarea id="fNote" rows="2" placeholder="Volitelná poznámka"></textarea>
+    </div>
+    <p class="muted dates" id="fDates"></p>
+    <button type="button" class="primary" id="saveBtn">Uložit</button>
+    <div class="actions">
+      <button type="button" class="secondary" id="cancelBtn">Zrušit</button>
+      <button type="button" class="danger" id="deleteBtn" hidden>Smazat</button>
+    </div>
+  </div>
 </div>
-<h2>Seznam</h2>
-<div class="card" id="list"></div>
-<div class="card">
-  <div class="field"><label for="notes">Poznámky</label><textarea id="notes" placeholder="Cokoliv dalšího ke dni"></textarea><div class="warn" id="notesWarn" hidden></div></div>
-</div>
-<button class="primary" id="send">Odeslat</button>
-<p class="muted" style="text-align:center" id="pending"></p>
-<div class="actions"><button class="secondary" id="clearDone">Vymazat hotové</button><button class="secondary" id="resend">Odeslat znovu poslední</button></div>
-<div class="toast" id="toast"></div>
+
+<div class="toast" id="toast" role="status"></div>
 <script src="app.js"></script>
 </body>
 </html>

@@ -8,7 +8,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Docházka">
-<meta name="theme-color" content="#f2f4f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#4a8019" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0b111b" media="(prefers-color-scheme: dark)">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
@@ -16,24 +16,83 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<h1>Docházka</h1>
-<div class="card">
-  <div class="field"><label for="date">Datum</label><input type="date" id="date"></div>
-  <div class="row field">
-    <div><label for="from">Od</label><input type="time" id="from" step="300"></div>
-    <div><label for="to">Do</label><input type="time" id="to" step="300"></div>
+<header class="top">
+  <h1>Docházka</h1>
+  <button type="button" class="icon-btn" id="settingsBtn" aria-label="Nastavení">Nastavení</button>
+</header>
+<nav class="tabs" id="tabs" role="tablist" aria-label="Sekce">
+  <button type="button" class="tab on" data-view="entry" role="tab">Zápis</button>
+  <button type="button" class="tab" data-view="month" role="tab">Měsíc</button>
+  <button type="button" class="tab" data-view="invoice" role="tab">Faktury</button>
+</nav>
+
+<section id="view-entry">
+  <div class="card">
+    <div class="field"><label for="date">Datum</label><input type="date" id="date"></div>
+    <div class="row field">
+      <div><label for="from1">Od</label><input type="time" id="from1" step="300"></div>
+      <div><label for="to1">Do</label><input type="time" id="to1" step="300"></div>
+    </div>
+    <div class="row field" id="span2row" hidden>
+      <div><label for="from2">Od (druhý čas)</label><input type="time" id="from2" step="300"></div>
+      <div><label for="to2">Do</label><input type="time" id="to2" step="300"></div>
+    </div>
+    <div class="actions tight">
+      <button type="button" class="secondary" id="toggleSpan2">+ Druhý čas</button>
+    </div>
+    <label class="check"><input type="checkbox" id="lunch" checked> Odečíst 30 min pauzu na oběd</label>
+    <label class="check"><input type="checkbox" id="nonbill"> Nefakturuje se / mimo SAPEKOR</label>
+  </div>
+  <div class="card total" id="total">Odpracováno: –<small>pauza 30 min se odečte</small></div>
+  <div class="card">
+    <div class="field"><label for="work">Na čem jsem pracoval</label><textarea id="work" placeholder="Každá činnost na nový řádek"></textarea></div>
+    <div class="field"><label for="notes">Poznámky</label><textarea id="notes" rows="2" placeholder="Cokoliv dalšího k dni"></textarea></div>
+  </div>
+  <div class="card">
+    <h2 class="incard">Výdaj k tomuto dni (volitelné)</h2>
+    <div class="field"><label for="expWhat">Za co</label><input type="text" id="expWhat" placeholder="Např. nákup dveří"></div>
+    <div class="field"><label for="expCzk">Částka v Kč</label><input type="number" id="expCzk" min="0" step="1" inputmode="numeric" placeholder="0"></div>
+  </div>
+  <button type="button" class="primary" id="saveSend">Uložit a odeslat</button>
+  <div class="actions"><button type="button" class="secondary" id="saveOnly">Jen uložit</button></div>
+  <p class="muted center" id="entryHint">Odeslání otevře e-mail, stačí ho poslat.</p>
+</section>
+
+<section id="view-month" hidden>
+  <div class="monthbar">
+    <button type="button" class="icon-btn" id="prevMonth" aria-label="Předchozí měsíc">‹</button>
+    <h2 id="monthTitle">Měsíc</h2>
+    <button type="button" class="icon-btn" id="nextMonth" aria-label="Další měsíc">›</button>
+  </div>
+  <div class="metrics" id="monthMetrics"></div>
+  <div class="card" id="monthWorkdays"></div>
+  <h2>Odpracované dny</h2>
+  <div id="monthDays"></div>
+  <h2 id="monthExpTitle">Výdaje</h2>
+  <div id="monthExp"></div>
+</section>
+
+<section id="view-invoice" hidden>
+  <h2>Příští faktura</h2>
+  <div class="card" id="nextInvoice"></div>
+  <h2>Vyfakturováno</h2>
+  <div id="pastInvoices"></div>
+</section>
+
+<div class="overlay" id="overlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <div class="sheet-handle"></div>
+    <h2 id="sheetTitle">Nastavení</h2>
+    <div id="sheetBody"></div>
+    <button type="button" class="primary" id="sheetSave">Uložit</button>
+    <div class="actions">
+      <button type="button" class="secondary" id="sheetCancel">Zavřít</button>
+      <button type="button" class="danger" id="sheetDelete" hidden>Smazat</button>
+    </div>
   </div>
 </div>
-<div class="card total" id="total">Odpracováno: –<small>pauza 30 min odečtena</small></div>
-<div class="card">
-  <div class="field"><label for="work">Na čem jsem pracoval</label><textarea id="work" placeholder="Každá činnost na nový řádek"></textarea></div>
-  <div class="field"><label for="notes">Poznámky</label><textarea id="notes" placeholder="Např. nákup dveří 4 555 Kč"></textarea><div class="warn" id="notesWarn" hidden></div></div>
-</div>
-<button class="primary" id="send">Uložit a odeslat</button>
-<p class="muted" style="text-align:center">Otevře se e-mail s vyplněným záznamem, stačí ho odeslat.</p>
-<h2>Poslední záznamy</h2>
-<div class="card" id="history"><div class="muted">Zatím žádné záznamy.</div></div>
-<div class="toast" id="toast"></div>
+
+<div class="toast" id="toast" role="status"></div>
 <script src="app.js"></script>
 </body>
 </html>
