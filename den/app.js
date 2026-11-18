@@ -19,18 +19,79 @@ const BUCKETS=[
   {id:'long',name:'Dlouhodobé',short:'Dlouhodobé'}
 ];
 const STATUSES=[{id:'open',name:'Otevřené'},{id:'wip',name:'Rozpracované'},{id:'wait',name:'Čeká'},{id:'done',name:'Hotovo'}];
-const APP_VERSION=5;
+const APP_VERSION=6;
 const CAT_REPAIR={'432daf02':'sva','7e50a6ef':'sva','97d85896':'sva','c47f2c69':'zam','59a4c2fe':'zam','b39cb988':'sva','727076df':'sva','83367aa7':'fre','6a18e6c6':'fre','79486842':'fre','83549cb7':'lin','3ef16c57':'ost','6443a152':'ost','738ca1f6':'fre','66c017e9':'zam','a1b882a7':'zam','249f1330':'zam','9c9d5258':'zam','354dbdf3':'zam','b9e025f0':'pul','4185f791':'pul','fbe7d7cd':'pul','aab0cba9':'sva','c6bfbc8d':'sva','4aeb6c08':'sva','a3d38c38':'sva','6e49be28':'ost','5b60e232':'ost','ee532219':'lin','deafdb98':'lin','527a770f':'inv','f19d2292':'inv','f2e4f1b8':'sva','875b1851':'fre','c0e70d5':'inv','802e913d':'ost'};
 function textKey(s){return String(s||'').trim().toLowerCase().replace(/[\u2010-\u2015\u2212]/g,'-').replace(/\s+/g,' ')}
 function fnv1a(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return (h>>>0).toString(16)}
+const CAT_COLORS=['#bd0926','#4a8019','#c2410c','#1d4ed8','#7c3aed','#dc2626','#047857','#b45309','#db2777','#475569'];
+function slugifyCat(name){
+  const map={'á':'a','ä':'a','č':'c','ď':'d','é':'e','ě':'e','í':'i','ň':'n','ó':'o','ö':'o','ř':'r','š':'s','ť':'t','ú':'u','ů':'u','ü':'u','ý':'y','ž':'z'};
+  let s=String(name||'').trim().toLowerCase();
+  s=s.replace(/[áäčďéěíňóöřšťúůüýž]/g,ch=>map[ch]||ch);
+  s=s.normalize('NFKD').replace(/[\u0300-\u036f]/g,'');
+  s=s.replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'').slice(0,20);
+  return s||('x'+Math.random().toString(36).slice(2,6));
+}
+function newCatId(name){
+  const base='u_'+slugifyCat(name);
+  const used=new Set(allCats().map(c=>c.id));
+  let id=base,i=2;
+  while(used.has(id))id=base+'_'+(i++);
+  return id;
+}
+function allCats(){return CATS.concat(customCats)}
+function isBuiltinCat(id){return CATS.some(c=>c.id===id)}
+function persistCats(){save('den_categories',customCats.map(c=>({id:c.id,name:c.name,color:c.color})))}
+function loadCustomCats(){
+  const raw=load('den_categories',[]);
+  if(!Array.isArray(raw))return [];
+  return raw.map(normalizeCategory).filter(Boolean).filter(c=>!isBuiltinCat(c.id));
+}
+function normalizeCategory(raw){
+  if(!raw||typeof raw!=='object')return null;
+  let name=String(raw.name||raw.n||raw.short||'').trim().slice(0,24);
+  let id=String(raw.id||'').trim();
+  let color=String(raw.color||raw.col||'').trim();
+  if(!id&&!name)return null;
+  if(!name)name=id.replace(/^u_/,'').replace(/_/g,' ').slice(0,24)||id;
+  if(!id)id=newCatId(name);
+  if(isBuiltinCat(id))return null;
+  if(!/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(color))color='#475569';
+  return{id,name,short:name,color};
+}
+function upsertCustomCat(cat){
+  const c=normalizeCategory(cat);if(!c)return false;
+  const i=customCats.findIndex(x=>x.id===c.id||x.name.toLowerCase()===c.name.toLowerCase());
+  if(i>=0){
+    const keep=customCats[i].id;
+    customCats[i]={id:keep,name:c.name,short:c.name,color:c.color||customCats[i].color};
+    persistCats();
+    return customCats[i].id;
+  }
+  customCats.push(c);persistCats();
+  return c.id;
+}
+function ingestCategories(list){
+  let n=0;
+  (list||[]).forEach(raw=>{if(upsertCustomCat(raw))n++});
+  return n;
+}
+function adoptUnknownCat(v,raw){
+  const name=String((raw&&(raw.catName||raw.categoryName||raw.cat_name))||(/^u_/.test(v)?v.slice(2).replace(/_/g,' '):v)).trim().slice(0,24)||v;
+  const color=(raw&&(raw.catColor||raw.color))||'#475569';
+  if(/^u_/.test(v))return upsertCustomCat({id:v,name,color})||v;
+  return upsertCustomCat({name,color})||'ost';
+}
 function catId(raw){
   const v=String((raw&&(raw.cat||raw.category||raw.c||raw.kat))||'').trim();
-  if(CATS.some(c=>c.id===v))return v;
+  if(!v)return 'ost';
+  if(allCats().some(c=>c.id===v))return v;
   const low=v.toLowerCase();
-  const byName=CATS.find(c=>c.name.toLowerCase()===low||c.short.toLowerCase()===low);
+  const byName=allCats().find(c=>c.name.toLowerCase()===low||(c.short||'').toLowerCase()===low);
   if(byName)return byName.id;
   const aliases={'zámečnická':'zam','zámečnická hala':'zam','zamecnicka':'zam','půlkulatá':'pul','půlkulatá hala':'pul','pulkulata':'pul','nová linka a ohýbačka':'lin','nova linka':'lin','linka':'lin','ohýbačka':'lin','ohybacka':'lin','svařovna':'sva','svarovna':'sva','fréza':'fre','freza':'fre','investice':'inv','ostatní':'ost','ostatni':'ost'};
-  return aliases[low]||'ost';
+  if(aliases[low])return aliases[low];
+  return adoptUnknownCat(v,raw);
 }
 function repairStoredTasks(list){
   let n=0;
@@ -61,7 +122,7 @@ const load=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch(e){re
 const save=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
 const uid=p=>(p||'x')+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const catBy=id=>CATS.find(c=>c.id===id)||CATS[CATS.length-1];
+const catBy=id=>allCats().find(c=>c.id===id)||CATS[CATS.length-1];
 const buckBy=id=>BUCKETS.find(b=>b.id===id)||BUCKETS[1];
 const stBy=id=>STATUSES.find(s=>s.id===id)||STATUSES[0];
 function toast(t){const e=$('toast');e.textContent=t;e.classList.add('show');clearTimeout(toast._t);toast._t=setTimeout(()=>e.classList.remove('show'),2500)}
@@ -181,7 +242,9 @@ function migrateOld(){
   if(!Array.isArray(out.notes)) out.notes=[];
   return out;
 }
+let customCats=[];
 const boot=migrateOld();
+customCats=loadCustomCats();
 let tasks=(boot.tasks||[]).map(normalizeTask).filter(Boolean);
 let days=(boot.days||[]).map(normalizeDay).filter(Boolean);
 let expenses=(boot.expenses||[]).map(normalizeExp).filter(Boolean);
@@ -189,7 +252,7 @@ let invoices=(boot.invoices||[]).map(normalizeExp).filter(Boolean);
 let reminders=(boot.reminders||[]).map(normalizeRem).filter(Boolean);
 let notes=(boot.notes||[]).map(normalizeNote).filter(Boolean);
 let settings=Object.assign(defaultSettings(),boot.settings||{});
-const persist=()=>{save('den_tasks',tasks);save('den_days',days);save('den_expenses',expenses);save('den_invoices',invoices);save('den_reminders',reminders);save('den_notes',notes);save('den_settings',settings)};
+const persist=()=>{save('den_tasks',tasks);save('den_days',days);save('den_expenses',expenses);save('den_invoices',invoices);save('den_reminders',reminders);save('den_notes',notes);save('den_settings',settings);persistCats()};
 repairStoredTasks(tasks);
 persist();
 
@@ -204,6 +267,7 @@ function period(){
 function inPeriod(iso,p){return iso>=p.start&&iso<=p.end}
 function findDay(date){return days.find(d=>d.date===date)}
 
+let catEditFromSettings=false;
 let view='dnes', taskTab='all', taskFilter='all', taskDoneOpen=true, monthYM=todayISO().slice(0,7);
 let sheetMode=null, sheetTarget=null, quickBucket='tomorrow', pendingMails=[];
 window.__lastMailto='';
@@ -366,11 +430,12 @@ function renderTasks(){
     tabs.appendChild(btn);
   });
   const fil=$('taskFilters');fil.innerHTML='';
-  [{id:'all',name:'Vše',short:'Vše',color:null}].concat(CATS).forEach(c=>{
+  [{id:'all',name:'Vše',short:'Vše',color:null}].concat(allCats()).forEach(c=>{
     const btn=document.createElement('button');btn.type='button';btn.className='fchip'+(taskFilter===c.id?' on':'');
     if(c.color)btn.style.setProperty('--cat',c.color);
-    btn.innerHTML=(c.color?'<span class="dot"></span>':'')+esc(c.short);
-    btn.onclick=()=>{taskFilter=c.id;renderTasks()};
+    btn.innerHTML=(c.color?'<span class="dot"></span>':'')+esc(c.short||c.name);
+    btn.onclick=()=>{if(btn._held){btn._held=false;return}taskFilter=c.id;renderTasks()};
+    if(c.id&&c.id.startsWith('u_'))bindCatLongPress(btn,c.id);
     fil.appendChild(btn);
   });
   const list=$('taskList');list.innerHTML='';
@@ -426,6 +491,51 @@ function paintChips(el,options,value,withDot,onpick){
     el.appendChild(b);
   });
 }
+function bindCatLongPress(btn,id){
+  let tm=null;
+  const start=()=>{tm=setTimeout(()=>{btn._held=true;catEditFromSettings=false;openCatEditor(customCats.find(c=>c.id===id));},550)};
+  const cancel=()=>{if(tm)clearTimeout(tm);tm=null};
+  btn.addEventListener('pointerdown',start);
+  btn.addEventListener('pointerup',cancel);
+  btn.addEventListener('pointerleave',cancel);
+  btn.addEventListener('pointercancel',cancel);
+}
+function paintSwatches(el,value,onpick){
+  el.innerHTML='';
+  CAT_COLORS.forEach(col=>{
+    const b=document.createElement('button');b.type='button';b.className='swatch'+(col.toLowerCase()===String(value||'').toLowerCase()?' on':'');
+    b.style.background=col;b.setAttribute('aria-label',col);
+    b.onclick=()=>onpick(col);
+    el.appendChild(b);
+  });
+}
+function mountNewCatForm(host,onCreated){
+  const old=$('newCatBox');if(old){old.remove();if(old.parentNode===host)return}
+  const box=document.createElement('div');box.id='newCatBox';box.className='new-cat-box';
+  box.innerHTML='<div class="field"><label for="newCatName">Název kategorie</label><input type="text" id="newCatName" maxlength="24" placeholder="např. Urgent!!"></div>'+
+    '<div class="field"><span class="lbl">Barva</span><div class="swatches" id="newCatColors"></div></div>'+
+    '<button type="button" class="secondary" id="newCatSave">Vytvořit</button>';
+  host.appendChild(box);
+  let color=CAT_COLORS[0];
+  const paint=()=>paintSwatches($('newCatColors'),color,c=>{color=c;paint()});
+  paint();
+  $('newCatSave').onclick=()=>{
+    const name=($('newCatName').value||'').trim();
+    if(!name){toast('Napiš název kategorie');return}
+    const exist=allCats().find(c=>c.name.toLowerCase()===name.toLowerCase()||(c.short||'').toLowerCase()===name.toLowerCase());
+    if(exist){box.remove();onCreated(exist.id);toast('Kategorie už existuje, vybral jsem ji');return}
+    const id=upsertCustomCat({name,color});
+    box.remove();onCreated(id);toast('Kategorie vytvořena');
+  };
+  setTimeout(()=>$('newCatName')&&$('newCatName').focus(),40);
+}
+function paintCatPicker(el,value,onpick){
+  paintChips(el,allCats(),value,true,onpick);
+  const add=document.createElement('button');add.type='button';add.className='chip add-cat';add.id='addCatChip';
+  add.textContent='+ Nová kategorie';
+  add.onclick=()=>mountNewCatForm(el.parentNode,id=>onpick(id));
+  el.appendChild(add);
+}
 function openTaskSheet(task){
   sheetMode='task';sheetTarget=task||null;
   const draft=task?{text:task.text,cat:task.cat,bucket:task.bucket,status:task.status,note:task.note||''}:{text:'',cat:'ost',bucket:view==='ukoly'&&taskTab!=='done'&&taskTab!=='all'?taskTab:'tomorrow',status:'open',note:''};
@@ -436,14 +546,14 @@ function openTaskSheet(task){
     '<div class="field"><span class="lbl">Období</span><div class="chips" id="fBucket"></div></div>'+
     '<div class="field"><span class="lbl">Stav</span><div class="chips" id="fStatus"></div></div>'+
     '<div class="field"><label for="fNote">Poznámka</label><textarea id="fNote" rows="2" placeholder="Volitelná poznámka">'+esc(draft.note)+'</textarea></div>';
-  const redraw=()=>{paintChips($('fCat'),CATS,draft.cat,true,id=>{draft.cat=id;redraw()});paintChips($('fBucket'),BUCKETS,draft.bucket,false,id=>{draft.bucket=id;redraw()});paintChips($('fStatus'),STATUSES,draft.status,false,id=>{draft.status=id;redraw()})};
+  const redraw=()=>{paintCatPicker($('fCat'),draft.cat,id=>{draft.cat=id;redraw()});paintChips($('fBucket'),BUCKETS,draft.bucket,false,id=>{draft.bucket=id;redraw()});paintChips($('fStatus'),STATUSES,draft.status,false,id=>{draft.status=id;redraw()})};
   redraw();
   $('overlay').dataset.draft=JSON.stringify(draft);
   $('overlay')._draft=draft;
   $('overlay').hidden=false;document.body.classList.add('locked');
   setTimeout(()=>$('fText')&&$('fText').focus(),50);
 }
-function closeSheet(){$('overlay').hidden=true;if($('importOverlay').hidden)document.body.classList.remove('locked');sheetMode=null;sheetTarget=null}
+function closeSheet(){$('overlay').hidden=true;if($('importOverlay').hidden)document.body.classList.remove('locked');sheetMode=null;sheetTarget=null;if($('sheetDelete'))$('sheetDelete').textContent='Smazat'}
 $('addTaskBtn').onclick=()=>openTaskSheet(null);
 $('sheetCancel').onclick=closeSheet;
 $('overlay').addEventListener('click',e=>{if(e.target===$('overlay'))closeSheet()});
@@ -459,6 +569,17 @@ $('sheetSave').onclick=()=>{
     pollInbox('force');
     return;
   }
+  if(sheetMode==='cat-edit'){
+    const draft=$('overlay')._draft||{};
+    const name=(($('editCatName')&&$('editCatName').value)||draft.name||'').trim();
+    if(!name){toast('Napiš název kategorie');return}
+    const cat=sheetTarget;if(!cat)return;
+    const clash=allCats().find(c=>c.id!==cat.id&&c.name.toLowerCase()===name.toLowerCase());
+    if(clash){toast('Taková kategorie už existuje');return}
+    cat.name=name;cat.short=name;cat.color=draft.color||cat.color;
+    persist();closeSheet();renderTasks();renderDnes();if(catEditFromSettings)openSettings();toast('Kategorie uložena');
+    return;
+  }
   if(sheetMode==='invoice'){
     const date=$('invDate').value,what=$('invWhat').value.trim(),cz=Number($('invCzk').value);
     if(!date||!what||!isFinite(cz)){toast('Doplň datum, popis a částku');return}
@@ -472,7 +593,7 @@ $('sheetSave').onclick=()=>{
     const bucket=draft.bucket||'tomorrow';
     const text=(draft.text||'').trim();if(!text){toast('Napiš úkol');return}
     const note=draft.tag?draft.tag:'';
-    tasks.push(normalizeTask({id:uid('t'),text,cat:'ost',bucket,status:'open',note,created:todayISO()}));
+    tasks.push(normalizeTask({id:uid('t'),text,cat:draft.cat||'ost',bucket,status:'open',note,created:todayISO()}));
     persist();closeSheet();renderTasks();renderDnes();renderNotes();toast('Úkol přidán');
     return;
   }
@@ -504,6 +625,7 @@ $('sheetSave').onclick=()=>{
   persist();closeSheet();renderTasks();renderDnes();
 };
 $('sheetDelete').onclick=()=>{
+  if(sheetMode==='cat-edit'&&sheetTarget){deleteCustomCat(sheetTarget);return}
   if(sheetMode==='task'&&sheetTarget){
     if(!confirm('Smazat úkol „'+sheetTarget.text+'“?'))return;
     tasks=tasks.filter(t=>t!==sheetTarget);persist();closeSheet();renderTasks();renderDnes();toast('Úkol smazán');
@@ -704,12 +826,13 @@ function deleteNote(n){
 }
 function openNoteTaskSheet(n){
   sheetMode='note-task';sheetTarget=n;
-  const draft={text:n.text,tag:n.tag||'',bucket:'tomorrow'};
+  const draft={text:n.text,tag:n.tag||'',bucket:'tomorrow',cat:'ost'};
   $('sheetTitle').textContent='Udělat z toho úkol';
   $('sheetDelete').hidden=true;
   $('sheetBody').innerHTML='<p style="margin:0 0 12px">'+esc(n.text)+'</p>'+(n.tag?'<p class="muted">'+esc(n.tag)+'</p>':'')+
+    '<div class="field"><span class="lbl">Kategorie</span><div class="chips" id="ntCat"></div></div>'+
     '<div class="field"><span class="lbl">Období</span><div class="chips" id="ntBucket"></div></div>';
-  const redraw=()=>paintChips($('ntBucket'),BUCKETS,draft.bucket,false,id=>{draft.bucket=id;redraw()});
+  const redraw=()=>{paintCatPicker($('ntCat'),draft.cat,id=>{draft.cat=id;redraw()});paintChips($('ntBucket'),BUCKETS,draft.bucket,false,id=>{draft.bucket=id;redraw()})};
   redraw();
   $('overlay')._draft=draft;
   $('overlay').hidden=false;document.body.classList.add('locked');
@@ -884,7 +1007,9 @@ function payloadFromPush(data){
   if(Array.isArray(data))data={tasks:data};
   if(!data||typeof data!=='object')data={};
   const noteSrc=Array.isArray(data.poznamky)?data.poznamky:(Array.isArray(data.notes)?data.notes:[]);
+  ingestCategories(data.kategorie||data.categories||[]);
   return{
+    kategorie:(data.kategorie||data.categories||[]).map(normalizeCategory).filter(Boolean),
     tasks:(data.tasks||[]).map(x=>normalizeTask(Object.assign({},x,{from:x.from||'bot'}))).filter(Boolean),
     days:(data.days||[]).map(x=>normalizeDay(Object.assign({imported:true},x))).filter(Boolean),
     expenses:(data.expenses||[]).map(normalizeExp).filter(Boolean),
@@ -898,7 +1023,8 @@ function payloadFromPush(data){
 }
 function applyInboxPayload(raw){
   const p=payloadFromPush(raw||{});
-  const n={tasks:0,reminders:0,poznamky:0,days:0,expenses:0,done:0,update:0};
+  const n={tasks:0,reminders:0,poznamky:0,days:0,expenses:0,done:0,update:0,kategorie:0};
+  n.kategorie=p.kategorie?p.kategorie.length:0;
   p.tasks.forEach(t=>{
     t.from='bot';
     const ex=findTaskMatch(t.id,t.text);
@@ -953,6 +1079,7 @@ function inboxToast(n){
   add(n.expenses,'výdaj','výdaje','výdajů');
   add(n.done,'hotový úkol','hotové úkoly','hotových úkolů');
   add(n.update,'úpravu','úpravy','úprav');
+  add(n.kategorie,'kategorii','kategorie','kategorií');
   if(!parts.length)return;
   toast('Nové od IS BOTa: '+parts.join(', '));
 }
@@ -1008,10 +1135,54 @@ function openSettings(){
     '<div class="field"><label for="sRate">Hodinovka v Kč</label><input type="number" id="sRate" min="0" step="1" value="'+esc(settings.rate)+'"></div>'+
     '<div class="field"><label for="sInboxKey">Kód pro IS BOTa</label><input type="text" id="sInboxKey" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX" value="'+esc(getInboxKeyRaw())+'"></div>'+
     (inboxHint?'<p class="muted" id="inboxHintLine">'+esc(inboxHint)+'</p>':'')+
+    '<div class="field"><span class="lbl">Kategorie</span><div class="cat-admin" id="catAdmin"></div></div>'+
     '<p class="muted">Verze aplikace: '+APP_VERSION+'</p>'+
     '<button type="button" class="secondary" id="forceUpdate">Aktualizovat aplikaci</button>';
   $('overlay').hidden=false;document.body.classList.add('locked');
   const fu=$('forceUpdate');if(fu)fu.onclick=forceRefreshApp;
+  renderCatAdmin();
+}
+function renderCatAdmin(){
+  const box=$('catAdmin');if(!box)return;
+  box.innerHTML='';
+  allCats().forEach(c=>{
+    const row=document.createElement('div');row.className='cat-row'+(isBuiltinCat(c.id)?' locked':'');
+    row.style.setProperty('--cat',c.color);
+    row.innerHTML='<span class="dot"></span><span class="cn">'+esc(c.name)+'</span>'+(isBuiltinCat(c.id)?'<span class="muted">vestavěná</span>':'<button type="button" class="ghost-btn" data-edit="'+esc(c.id)+'">Upravit</button>');
+    const ed=row.querySelector('[data-edit]');
+    if(ed)ed.onclick=()=>{catEditFromSettings=true;openCatEditor(customCats.find(x=>x.id===c.id))};
+    box.appendChild(row);
+  });
+  const add=document.createElement('button');add.type='button';add.className='chip add-cat';add.textContent='+ Nová kategorie';
+  add.onclick=()=>mountNewCatForm(box,()=>{renderCatAdmin();if(view==='ukoly')renderTasks()});
+  box.appendChild(add);
+}
+function openCatEditor(cat){
+  if(!cat)return;
+  sheetMode='cat-edit';sheetTarget=cat;
+  const draft={name:cat.name,color:cat.color};
+  $('sheetTitle').textContent='Upravit kategorii';
+  $('sheetDelete').hidden=false;
+  $('sheetDelete').textContent='Smazat';
+  $('sheetBody').innerHTML='<div class="field"><label for="editCatName">Název</label><input type="text" id="editCatName" maxlength="24" value="'+esc(draft.name)+'"></div>'+
+    '<div class="field"><span class="lbl">Barva</span><div class="swatches" id="editCatColors"></div></div>';
+  const paint=()=>paintSwatches($('editCatColors'),draft.color,c=>{draft.color=c;paint()});
+  paint();
+  $('overlay')._draft=draft;
+  $('overlay').hidden=false;document.body.classList.add('locked');
+}
+function deleteCustomCat(cat){
+  if(!cat||isBuiltinCat(cat.id))return;
+  const n=tasks.filter(t=>t.cat===cat.id).length;
+  if(!confirm('Smazat kategorii „'+cat.name+'“?'+(n?' Úkoly ('+n+') se přesunou do Ostatní.':'')))return;
+  tasks.forEach(t=>{if(t.cat===cat.id){t.cat='ost';t.updated=Date.now()}});
+  customCats=customCats.filter(c=>c.id!==cat.id);
+  if(taskFilter===cat.id)taskFilter='all';
+  persist();
+  closeSheet();
+  renderTasks();renderDnes();
+  if(catEditFromSettings)openSettings();
+  toast('Kategorie smazána');
 }
 async function forceRefreshApp(){
   toast('Aktualizuji…');
@@ -1066,7 +1237,9 @@ function parseImportedBundle(raw){
   let data=JSON.parse(b64urlDecode(extractImportPayload(raw)));
   if(Array.isArray(data))data={tasks:data};
   if(!data||typeof data!=='object')data={};
+  ingestCategories(data.kategorie||data.categories||[]);
   return{
+    kategorie:(data.kategorie||data.categories||[]).map(normalizeCategory).filter(Boolean),
     tasks:(data.tasks||[]).map(normalizeTask).filter(Boolean),
     days:(data.days||[]).map(x=>normalizeDay(Object.assign({imported:true},x))).filter(Boolean),
     expenses:(data.expenses||[]).map(normalizeExp).filter(Boolean),
@@ -1085,6 +1258,7 @@ function importSummary(b){
   add(b.invoices.length,'fakturu','faktury','faktur');
   add(b.reminders.length,'připomínku','připomínky','připomínek');
   add((b.poznamky||[]).length,'poznámku','poznámky','poznámek');
+  add((b.kategorie||[]).length,'kategorii','kategorie','kategorií');
   return parts;
 }
 function upsert(arr,item,same){
@@ -1097,6 +1271,7 @@ function applyImported(b){
   if(!parts.length){toast('V odkazu nejsou žádná data');return false}
   const existing=tasks.length||days.length||expenses.length||invoices.length||reminders.length;
   if(!confirm('Nahrát '+parts.join(', ')+'?'+(existing?' Stejné se aktualizují, ostatní zůstanou.':'')))return false;
+  ingestCategories(b.kategorie||[]);
   b.tasks.forEach(t=>upsert(tasks,t,(a,c)=>a.id===c.id||a.text.toLowerCase()===c.text.toLowerCase()));
   b.days.forEach(d=>upsert(days,d,(a,c)=>a.date===c.date));
   b.expenses.forEach(d=>upsert(expenses,d,(a,c)=>a.date===c.date&&a.what===c.what));
@@ -1161,7 +1336,8 @@ function takeSnapshot(){
     rem:reminders.map(r=>({id:r.id,text:r.text,when:r.when,done:!!r.done})),
     notes:$('dayNotes')?$('dayNotes').value.trim():'',
     poznamky:notes.map(n=>({id:n.id,at:n.at,text:n.text,tag:n.tag||'',updated:n.updated||n.at})),
-    expenses:expenses.map(e=>({date:e.date,what:e.what,czk:e.czk}))
+    expenses:expenses.map(e=>({date:e.date,what:e.what,czk:e.czk})),
+    kategorie:customCats.map(c=>({id:c.id,name:c.name,color:c.color}))
   });
 }
 function collectChanges(){
@@ -1213,10 +1389,16 @@ function collectChanges(){
     if(n.tag)o.tag=n.tag;
     return o;
   });
-  return{date,dochazka,ukoly:{new:neu,done,changed},pripominky,poznamky,notes:notesOut};
+  const snapCats=new Map((snap&&snap.kategorie||[]).map(x=>[x.id,x]));
+  const kategorie=customCats.filter(c=>{
+    const prev=snapCats.get(c.id);
+    if(!prev)return true;
+    return prev.name!==c.name||prev.color!==c.color;
+  }).map(c=>({id:c.id,name:c.name,color:c.color}));
+  return{date,dochazka,ukoly:{new:neu,done,changed},pripominky,poznamky,notes:notesOut,kategorie};
 }
 function hasChanges(p){
-  return !!(p.dochazka||p.ukoly.new.length||p.ukoly.done.length||p.ukoly.changed.length||p.pripominky.length||(p.poznamky&&p.poznamky.length)||p.notes);
+  return !!(p.dochazka||p.ukoly.new.length||p.ukoly.done.length||p.ukoly.changed.length||p.pripominky.length||(p.poznamky&&p.poznamky.length)||p.notes||(p.kategorie&&p.kategorie.length));
 }
 function humanSummary(p){
   const L=['Den '+czDate(p.date),''];
@@ -1233,6 +1415,7 @@ function humanSummary(p){
   if(p.ukoly.changed.length){L.push('Upravené úkoly:');p.ukoly.changed.forEach(t=>L.push('- '+t.t));L.push('')}
   if(p.pripominky.length){L.push('Připomínky:');p.pripominky.forEach(r=>L.push('- '+(r.when?formatWhen(r.when)+': ':'')+r.text));L.push('')}
   if(p.poznamky&&p.poznamky.length){L.push('Poznámky:');p.poznamky.forEach(n=>L.push('- '+(n.at?stampToDisplay(n.at)+': ':'')+(n.tag?n.tag+' · ':'')+n.text));L.push('')}
+  if(p.kategorie&&p.kategorie.length){L.push('Kategorie:');p.kategorie.forEach(c=>L.push('- '+c.name+' ('+c.id+')'));L.push('')}
   if(p.notes){L.push('Poznámky k dnešku:',p.notes,'')}
   return L.join('\n').trim();
 }
@@ -1253,9 +1436,9 @@ function splitPayload(p){
   const two=packBody(dateLabel,short,1,1);
   if(two.body.length<=BODY_MAX)return[two];
   const chunks=[];
-  const base={date:p.date,dochazka:null,ukoly:{new:[],done:[],changed:[]},pripominky:[],poznamky:[],notes:''};
-  if(p.dochazka||p.notes||(p.poznamky&&p.poznamky.length))chunks.push(Object.assign({},base,{dochazka:p.dochazka,notes:p.notes,poznamky:p.poznamky||[]}));
-  const take=()=>({date:p.date,dochazka:null,ukoly:{new:[],done:[],changed:[]},pripominky:[],poznamky:[],notes:''});
+  const base={date:p.date,dochazka:null,ukoly:{new:[],done:[],changed:[]},pripominky:[],poznamky:[],kategorie:[],notes:''};
+  if(p.dochazka||p.notes||(p.poznamky&&p.poznamky.length)||(p.kategorie&&p.kategorie.length))chunks.push(Object.assign({},base,{dochazka:p.dochazka,notes:p.notes,poznamky:p.poznamky||[],kategorie:p.kategorie||[]}));
+  const take=()=>({date:p.date,dochazka:null,ukoly:{new:[],done:[],changed:[]},pripominky:[],poznamky:[],kategorie:[],notes:''});
   let cur=take();
   const fit=obj=>{const b=packBody(dateLabel,Object.assign({},obj,{_human:humanSummary(obj)}),1,1);return b.body.length<=BODY_MAX-20};
   const pushList=(key,arr)=>{
