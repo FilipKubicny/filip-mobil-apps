@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="0" fill="#111111"/>
+  <g transform="translate(102.4,102.4) scale(0.6)">
+    
+  <!-- ring, thick enough to survive 16–32 px -->
+  <circle cx="256" cy="256" r="168" fill="none" stroke="#4a8019" stroke-width="22"/>
+  <!-- east / west, shorter and darker / lighter -->
+  <polygon points="256,232 420,256 256,280" fill="#6ab023"/>
+  <polygon points="256,232 92,256 256,280" fill="#4a8019"/>
+  <!-- north / south, dominant needle -->
+  <polygon points="232,256 256,86 280,256" fill="#6ab023"/>
+  <polygon points="232,256 256,426 280,256" fill="#4a8019"/>
+  <!-- hub -->
+  <circle cx="256" cy="256" r="28" fill="#111111"/>
+  <circle cx="256" cy="256" r="16" fill="#6ab023"/>
+
+  </g>
+</svg>
