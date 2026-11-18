@@ -176,3 +176,14 @@ button:active,.chip:active,.fchip:active,.tab:active,.chk:active,.ghost-btn:acti
 .chip:active,.fchip:active,.tab:active,.chk:active,.ghost-btn:active,.secondary:active,.primary:active{transform:scale(.97)}
 .fab:active{transform:translateX(-50%);opacity:.88}
 .chk.flash{background:var(--accent);border-color:var(--accent)}
+
+#privacyCover{display:none;position:fixed;inset:0;z-index:90;background:var(--bg)}
+#lockScreen{display:none;position:fixed;inset:0;z-index:100;align-items:center;justify-content:center;padding:24px;padding-bottom:calc(env(safe-area-inset-bottom) + 24px);background:var(--bg)}
+#lockScreen .lock-card{width:100%;max-width:400px}
+#lockScreen h1{font-size:26px;margin:0 0 10px}
+#lockScreen p{margin:0 0 18px;color:var(--muted);font-size:16px;line-height:1.4}
+#lockScreen .secondary{margin-top:10px}
+#lockEmergency{margin-top:16px}
+html.app-locked body > *:not(#lockScreen){visibility:hidden!important;pointer-events:none!important}
+html.app-locked #lockScreen{display:flex!important;visibility:visible!important;pointer-events:auto!important}
+html.app-blurred #privacyCover{display:block!important;visibility:visible!important;pointer-events:auto!important}

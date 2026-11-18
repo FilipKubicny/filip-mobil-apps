@@ -20,7 +20,7 @@ const BUCKETS=[
 ];
 const STATUSES=[{id:'open',name:'Otevřené'},{id:'wip',name:'Rozpracované'},{id:'wait',name:'Čeká'},{id:'done',name:'Hotovo'}];
 const REPEATS=[{id:'',name:'Neopakuje se',short:'Neopakuje se'},{id:'daily',name:'Denně',short:'Denně'},{id:'weekly',name:'Týdně',short:'Týdně'},{id:'monthly',name:'Měsíčně',short:'Měsíčně'},{id:'workdays',name:'Pracovní dny',short:'Pracovní dny'}];
-const APP_VERSION=7;
+const APP_VERSION=8;
 const CAT_REPAIR={'432daf02':'sva','7e50a6ef':'sva','97d85896':'sva','c47f2c69':'zam','59a4c2fe':'zam','b39cb988':'sva','727076df':'sva','83367aa7':'fre','6a18e6c6':'fre','79486842':'fre','83549cb7':'lin','3ef16c57':'ost','6443a152':'ost','738ca1f6':'fre','66c017e9':'zam','a1b882a7':'zam','249f1330':'zam','9c9d5258':'zam','354dbdf3':'zam','b9e025f0':'pul','4185f791':'pul','fbe7d7cd':'pul','aab0cba9':'sva','c6bfbc8d':'sva','4aeb6c08':'sva','a3d38c38':'sva','6e49be28':'ost','5b60e232':'ost','ee532219':'lin','deafdb98':'lin','527a770f':'inv','f19d2292':'inv','f2e4f1b8':'sva','875b1851':'fre','c0e70d5':'inv','802e913d':'ost'};
 function textKey(s){return String(s||'').trim().toLowerCase().replace(/[\u2010-\u2015\u2212]/g,'-').replace(/\s+/g,' ')}
 function fnv1a(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return (h>>>0).toString(16)}
@@ -1111,7 +1111,8 @@ function dumpState(){
     categories:customCats,applied:loadAppliedInbox(),
     draft:load('den_draft',null),note_draft:load('den_note_draft',null),
     snap:load('den_snap',null),pending_mails:load('den_pending_mails',[]),
-    inbox_key:getInboxKeyRaw()
+    inbox_key:getInboxKeyRaw(),
+    lock:load('den_lock',null)
   };
 }
 function applyFullState(data){
@@ -1132,6 +1133,7 @@ function applyFullState(data){
   if(data.snap)save('den_snap',data.snap);
   if(data.pending_mails)save('den_pending_mails',data.pending_mails);
   if(data.inbox_key)setInboxKeyRaw(data.inbox_key);
+  if(data.lock&&typeof data.lock==='object')save('den_lock',data.lock);
   persist();
 }
 async function shareOrDownload(blob,filename,title){
@@ -1329,6 +1331,7 @@ function openSettings(){
     '<div class="field"><label for="sRate">Hodinovka v Kč</label><input type="number" id="sRate" min="0" step="1" value="'+esc(settings.rate)+'"></div>'+
     '<div class="field"><label for="sInboxKey">Kód pro IS BOTa</label><input type="text" id="sInboxKey" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX" value="'+esc(getInboxKeyRaw())+'"></div>'+
     (inboxHint?'<p class="muted" id="inboxHintLine">'+esc(inboxHint)+'</p>':'')+
+    lockSettingsHtml()+
     '<div class="field"><span class="lbl">Kategorie</span><div class="cat-admin" id="catAdmin"></div></div>'+
     '<div class="field"><span class="lbl">Záloha</span><div class="muted">Šifrovaná stejným kódem jako inbox. Při odeslání IS BOTovi se záloha nabídne ke sdílení.</div></div>'+
     '<button type="button" class="secondary" id="backupExport">Stáhnout / sdílet zálohu</button>'+
@@ -1339,6 +1342,7 @@ function openSettings(){
   const fu=$('forceUpdate');if(fu)fu.onclick=forceRefreshApp;
   const be=$('backupExport');if(be)be.onclick=()=>exportBackup();
   const bi=$('backupImport');if(bi)bi.onclick=()=>{const f=$('backupFile');if(f)f.click()};
+  const lt=$('lockToggle');if(lt)lt.onclick=()=>{toggleAppLock()};
   renderCatAdmin();
 }
 function renderCatAdmin(){
@@ -1709,8 +1713,157 @@ async function startSend(){
 }
 $('sendBtn').onclick=()=>{startSend()};
 
-/* ---------- Init ---------- */
-(function initForm(){
+/* ---------- App lock (WebAuthn / Face ID) ---------- */
+const RP_ID_PROD='filipkubicny.github.io';
+const LOCK_AFTER_MS=5*60*1000;
+let platformUvAvail=null, uiReady=false, unlocked=true, hideAt=0, lastUnlockAt=0;
+function lockRpId(){
+  const h=location.hostname;
+  if(h===RP_ID_PROD||h.endsWith('.'+RP_ID_PROD))return RP_ID_PROD;
+  return h;
+}
+function lockApiPresent(){
+  return !!(window.isSecureContext&&window.PublicKeyCredential&&navigator.credentials&&navigator.credentials.create&&navigator.credentials.get);
+}
+async function checkLockSupport(){
+  if(!lockApiPresent()){platformUvAvail=false;return false}
+  try{
+    if(PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable)
+      platformUvAvail=!!(await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable());
+    else platformUvAvail=true;
+  }catch(e){platformUvAvail=false}
+  const field=$('lockField');
+  if(field&&platformUvAvail===false)field.remove();
+  return platformUvAvail;
+}
+function loadLock(){const L=load('den_lock',null);return (L&&typeof L==='object')?L:null}
+function lockEnabled(){const L=loadLock();return !!(L&&L.on&&L.credId)}
+function bytesToB64url(u){return bytesToB64(u).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
+function b64urlToBytes(s){
+  const t=String(s||'').replace(/-/g,'+').replace(/_/g,'/');
+  const pad=t.length%4===0?'':'===='.slice(t.length%4);
+  return b64toBytes(t+pad);
+}
+function assertionHasUV(assertion){
+  try{
+    const ad=new Uint8Array(assertion.response.authenticatorData);
+    if(ad.length<33)return false;
+    return (ad[32]&0x04)!==0;
+  }catch(e){return false}
+}
+function setLockHint(s){const e=$('lockHint');if(e)e.textContent=s||''}
+function armPrivacyCover(){if(lockEnabled())document.documentElement.classList.add('app-blurred')}
+function disarmPrivacyCover(){document.documentElement.classList.remove('app-blurred')}
+function scrubDom(){
+  ['taskList','todayTasks','todayNotesList','noteList','searchResults','taskFilters','todayRems'].forEach(id=>{const e=$(id);if(e)e.innerHTML=''});
+  ['quickTask','noteText','work','dayNotes','expWhat','expCzk','from1','to1','from2','to2','searchQ'].forEach(id=>{const e=$(id);if(e)e.value=''});
+  uiReady=false;
+}
+function showLockScreen(){
+  document.documentElement.classList.add('app-locked');
+  disarmPrivacyCover();
+  const el=$('lockScreen');if(el)el.hidden=false;
+  const em=$('lockEmergency');if(em)em.hidden=true;
+  const code=$('lockCode');if(code)code.value='';
+  setLockHint('');
+  unlocked=false;
+}
+function lockApp(){
+  unlocked=false;
+  scrubDom();
+  showLockScreen();
+}
+function shouldRelock(){return lockEnabled()&&unlocked&&hideAt&&(Date.now()-hideAt>=LOCK_AFTER_MS)}
+function lockSettingsHtml(){
+  if(platformUvAvail===false)return '';
+  if(platformUvAvail===null&&!lockApiPresent())return '';
+  const on=lockEnabled();
+  return '<div class="field" id="lockField"><span class="lbl">Zámek Face ID</span>'+
+    '<div class="muted">Na iPhonu odemkne Face ID, případně kód telefonu. Když passkey chybí, použiješ kód pro IS BOTa. Zámek je jen v telefonu — data zůstávají v úložišti prohlížeče.</div>'+
+    '<button type="button" class="secondary" id="lockToggle">'+(on?'Vypnout zámek Face ID':'Zapnout zámek Face ID')+'</button></div>';
+}
+async function registerAppLock(){
+  if(!lockApiPresent()){toast('Tenhle prohlížeč Face ID zámek neumí');return}
+  if(!getInboxKey()){toast('Nejdřív zadej kód pro IS BOTa — slouží jako nouzové odemčení');return}
+  try{
+    const userId=crypto.getRandomValues(new Uint8Array(16));
+    const cred=await navigator.credentials.create({
+      publicKey:{
+        rp:{id:lockRpId(),name:'Den'},
+        user:{id:userId,name:'den-zamek',displayName:'Den'},
+        challenge:crypto.getRandomValues(new Uint8Array(32)),
+        pubKeyCredParams:[{type:'public-key',alg:-7},{type:'public-key',alg:-257}],
+        timeout:60000,
+        authenticatorSelection:{authenticatorAttachment:'platform',userVerification:'required',residentKey:'preferred',requireResidentKey:false},
+        attestation:'none'
+      }
+    });
+    if(!cred||!cred.rawId){toast('Face ID se nepodařilo nastavit');return}
+    const credId=bytesToB64url(new Uint8Array(cred.rawId));
+    save('den_lock',{on:true,credId,at:nowStamp()});
+    toast('Zámek Face ID je zapnutý');
+    if(sheetMode==='settings')openSettings();
+  }catch(e){
+    if(e&&e.name==='NotAllowedError')toast('Nastavení zámku bylo zrušeno');
+    else toast('Face ID se nepodařilo nastavit');
+  }
+}
+function disableAppLock(){
+  if(!confirm('Vypnout zámek Face ID?'))return;
+  save('den_lock',{on:false,credId:'',at:nowStamp()});
+  document.documentElement.classList.remove('app-locked');
+  const el=$('lockScreen');if(el)el.hidden=true;
+  unlocked=true;
+  toast('Zámek Face ID je vypnutý');
+  if(sheetMode==='settings')openSettings();
+  bootUi();
+}
+function toggleAppLock(){
+  if(lockEnabled())disableAppLock();
+  else registerAppLock();
+}
+async function unlockWithFace(){
+  const L=loadLock();
+  if(!L||!L.credId){setLockHint('Zámek není nastavený.');return}
+  setLockHint('');
+  try{
+    const assertion=await navigator.credentials.get({
+      publicKey:{
+        rpId:lockRpId(),
+        challenge:crypto.getRandomValues(new Uint8Array(32)),
+        allowCredentials:[{type:'public-key',id:b64urlToBytes(L.credId),transports:['internal']}],
+        userVerification:'required',
+        timeout:60000
+      }
+    });
+    if(!assertion){setLockHint('Odemčení se nepovedlo.');return}
+    if(!assertionHasUV(assertion)){setLockHint('Chybí ověření Face ID nebo kódu telefonu.');return}
+    unlockApp();
+  }catch(e){
+    if(e&&e.name==='NotAllowedError')setLockHint('Ověření bylo zrušeno. Zkus to znovu, nebo použij kód pro IS BOTa.');
+    else setLockHint('Odemčení se nepovedlo. Zkus kód pro IS BOTa.');
+  }
+}
+function unlockWithPassphrase(){
+  const typed=normalizeInboxKey(($('lockCode')&&$('lockCode').value)||'');
+  const have=getInboxKey();
+  if(!have){setLockHint('Kód pro IS BOTa v aplikaci chybí. Nastav ho, až se dostaneš do Nastavení.');return}
+  if(!typed||typed!==have){setLockHint('Kód nesedí.');return}
+  unlockApp();
+}
+function unlockApp(){
+  unlocked=true;
+  lastUnlockAt=Date.now();
+  hideAt=0;
+  document.documentElement.classList.remove('app-locked');
+  disarmPrivacyCover();
+  const el=$('lockScreen');if(el)el.hidden=true;
+  const code=$('lockCode');if(code)code.value='';
+  setLockHint('');
+  bootUi();
+}
+function initForm(){
+  if(initForm._done)return;
   const d=load('den_draft',null);
   const existing=findDay(todayISO());
   if(existing)fillTodayForm(existing);
@@ -1723,16 +1876,55 @@ $('sendBtn').onclick=()=>{startSend()};
   if(d&&d.notes)$('dayNotes').value=d.notes;
   pendingMails=load('den_pending_mails',[])||[];
   updateTotal();
-})();
+  initForm._done=true;
+}
+function bootUi(){
+  if(uiReady){
+    renderDnes();
+    if(view==='ukoly')renderTasks();
+    if(view==='dochazka')renderDochazka();
+    if(view==='rems')renderRems();
+    if(view==='notes')renderNotes();
+    return;
+  }
+  uiReady=true;
+  initForm();
+  restoreNoteDraft();
+  renderDnes();
+  handleHashImport();
+  pollInbox('init');
+}
+function onAppHide(){
+  hideAt=Date.now();
+  if(lockEnabled())armPrivacyCover();
+}
+function onAppShow(){
+  disarmPrivacyCover();
+  if(shouldRelock()){lockApp();return}
+  if(uiReady&&unlocked)pollInbox('visible');
+}
+
 if($('appVer'))$('appVer').textContent='verze '+APP_VERSION;
 if(!load('den_snap',null)&&(tasks.length||days.length||notes.length))takeSnapshot();
-restoreNoteDraft();
-renderDnes();
-handleHashImport();
-pollInbox('init');
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')pollInbox('visible')});
-window.addEventListener('focus',()=>pollInbox('focus'));
-setInterval(()=>{if(!document.hidden)pollInbox('timer')},5*60*1000);
+pendingMails=load('den_pending_mails',[])||[];
+if(lockEnabled()){unlocked=false;showLockScreen()}
+else {unlocked=true;bootUi()}
+checkLockSupport();
+if($('lockUnlock'))$('lockUnlock').onclick=()=>{unlockWithFace()};
+if($('lockEmergencyBtn'))$('lockEmergencyBtn').onclick=()=>{
+  const box=$('lockEmergency');if(!box)return;
+  box.hidden=!box.hidden;
+  if(!box.hidden&&$('lockCode'))$('lockCode').focus();
+};
+if($('lockCodeGo'))$('lockCodeGo').onclick=unlockWithPassphrase;
+if($('lockCode'))$('lockCode').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();unlockWithPassphrase()}});
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='hidden'){onAppHide();saveNoteDraft();stopDictation()}
+  else onAppShow();
+});
+window.addEventListener('pagehide',onAppHide);
+window.addEventListener('focus',()=>{if(unlocked&&uiReady&&!document.hidden)pollInbox('focus')});
+setInterval(()=>{if(!document.hidden&&unlocked&&uiReady)pollInbox('timer')},5*60*1000);
 function setupSW(){
   if(!('serviceWorker' in navigator))return;
   navigator.serviceWorker.addEventListener('message',ev=>{

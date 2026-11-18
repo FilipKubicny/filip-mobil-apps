@@ -13,11 +13,31 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
 <link rel="icon" type="image/png" href="icon-192.png">
-<link rel="stylesheet" href="style.css?v=7">
+<link rel="stylesheet" href="style.css?v=8">
+<script>
+(function(){try{var L=JSON.parse(localStorage.getItem('den_lock')||'null');if(L&&L.on&&L.credId)document.documentElement.classList.add('app-locked');}catch(e){}})();
+</script>
 </head>
 <body>
+<div id="privacyCover" aria-hidden="true"></div>
+<div id="lockScreen" hidden>
+  <div class="lock-card">
+    <h1>Den je zamčený</h1>
+    <p>Odemkni Face ID, nebo kód telefonu, který iPhone nabídne.</p>
+    <button type="button" class="primary" id="lockUnlock">Odemknout Face ID</button>
+    <button type="button" class="secondary" id="lockEmergencyBtn">Odemknout kódem pro IS BOTa</button>
+    <div id="lockEmergency" hidden>
+      <div class="field">
+        <label for="lockCode">Kód pro IS BOTa</label>
+        <input type="text" id="lockCode" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX">
+      </div>
+      <button type="button" class="primary" id="lockCodeGo">Odemknout kódem</button>
+    </div>
+    <p class="muted" id="lockHint"></p>
+  </div>
+</div>
 <header class="top">
-  <h1>Den <span class="ver" id="appVer">verze 7</span></h1>
+  <h1>Den <span class="ver" id="appVer">verze 8</span></h1>
   <div class="top-actions">
     <button type="button" class="ghost-btn" id="importBtn">Vložit data</button>
     <button type="button" class="ghost-btn" id="settingsBtn">Nastavení</button>
@@ -201,6 +221,6 @@
 
 <input type="file" id="backupFile" accept=".enc,.denbak,application/json" hidden>
 <div class="toast" id="toast" role="status"></div>
-<script src="app.js?v=7"></script>
+<script src="app.js?v=8"></script>
 </body>
 </html>
