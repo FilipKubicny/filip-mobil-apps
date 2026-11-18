@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
 <link rel="icon" type="image/png" href="icon-192.png">
-<link rel="stylesheet" href="style.css?v=10">
+<link rel="stylesheet" href="style.css?v=11">
 </head>
 <body>
 <div id="appRoot">
@@ -30,21 +30,22 @@
     <button type="button" data-view="notes">Poznámky</button>
   </nav>
   <div class="sb-foot">
-    <button type="button" class="sb-sync" id="sbSync">Synchronizovat</button>
+    <button type="button" class="sb-sync" id="sbSync">Synchronizovat teď</button>
     <button type="button" class="sb-settings" id="sbSettings">Nastavení</button>
-    <div class="sb-ver">verze 10</div>
+    <div class="sb-ver">verze 11</div>
   </div>
 </aside>
 <div id="appMain">
 <header class="top" id="topBar">
   <div class="nav-bar">
     <h1 class="nav-title" id="navTitle">Den</h1>
+    <div id="syncStatus" class="sync-status" aria-live="polite">Jen v tomto zařízení</div>
     <div class="top-actions">
       <button type="button" class="ghost-btn" id="importBtn">Vložit</button>
       <button type="button" class="ghost-btn" id="settingsBtn">Nastavení</button>
     </div>
   </div>
-  <h1 class="large-title" id="largeTitle">Den <span class="ver" id="appVer">verze 10</span></h1>
+  <h1 class="large-title" id="largeTitle">Den <span class="ver" id="appVer">verze 11</span></h1>
 </header>
 <div id="storageWarn" class="banner warn" hidden>Paměť telefonu je plná. Data se nemusí uložit — udělej zálohu v Nastavení.</div>
 <div class="search-wrap">
@@ -123,15 +124,13 @@
     <button type="button" class="secondary" id="goNotes">Otevřít poznámky</button>
   </section>
 
-  <button type="button" class="primary send-main" id="sendBtn">Odeslat IS BOTovi</button>
-  <p class="muted center" id="sendHint">Otevře se e-mail, stačí ho odeslat.</p>
-  <div id="pendingMail" hidden></div>
+  <p class="muted center" id="sendHint">Změny se ukládají samy. IS BOT si je čte z úložiště.</p>
 </main>
 
 <main id="view-ukoly" hidden>
   <div id="deskToolbar">
     <button type="button" class="desk-btn" id="deskNew">Nový úkol</button>
-    <button type="button" class="desk-btn ghost" id="deskSync">Synchronizovat</button>
+    <button type="button" class="desk-btn ghost" id="deskSync">Synchronizovat teď</button>
     <button type="button" class="desk-btn ghost" id="deskPrint">Tisk</button>
     <div id="bulkBar" hidden>
       <span id="bulkCount">0 vybraných</span>
@@ -255,6 +254,6 @@
 <input type="file" id="backupFile" accept=".enc,.denbak,application/json" hidden>
 <div class="toast" id="toast" role="status"></div>
 </div><!-- /appRoot -->
-<script src="app.js?v=10"></script>
+<script src="app.js?v=11"></script>
 </body>
 </html>

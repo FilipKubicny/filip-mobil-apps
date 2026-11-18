@@ -20,8 +20,9 @@ const BUCKETS=[
 ];
 const STATUSES=[{id:'open',name:'Otevřené'},{id:'wip',name:'Rozpracované'},{id:'wait',name:'Čeká'},{id:'done',name:'Hotovo'}];
 const REPEATS=[{id:'',name:'Neopakuje se',short:'Neopakuje se'},{id:'daily',name:'Denně',short:'Denně'},{id:'weekly',name:'Týdně',short:'Týdně'},{id:'monthly',name:'Měsíčně',short:'Měsíčně'},{id:'workdays',name:'Pracovní dny',short:'Pracovní dny'}];
-const APP_VERSION=10;
+const APP_VERSION=11;
 try{localStorage.removeItem('den_lock')}catch(e){}
+try{localStorage.removeItem('den_pending_mails')}catch(e){}
 const CAT_REPAIR={'432daf02':'sva','7e50a6ef':'sva','97d85896':'sva','c47f2c69':'zam','59a4c2fe':'zam','b39cb988':'sva','727076df':'sva','83367aa7':'fre','6a18e6c6':'fre','79486842':'fre','83549cb7':'lin','3ef16c57':'ost','6443a152':'ost','738ca1f6':'fre','66c017e9':'zam','a1b882a7':'zam','249f1330':'zam','9c9d5258':'zam','354dbdf3':'zam','b9e025f0':'pul','4185f791':'pul','fbe7d7cd':'pul','aab0cba9':'sva','c6bfbc8d':'sva','4aeb6c08':'sva','a3d38c38':'sva','6e49be28':'ost','5b60e232':'ost','ee532219':'lin','deafdb98':'lin','527a770f':'inv','f19d2292':'inv','f2e4f1b8':'sva','875b1851':'fre','c0e70d5':'inv','802e913d':'ost'};
 function textKey(s){return String(s||'').trim().toLowerCase().replace(/[\u2010-\u2015\u2212]/g,'-').replace(/\s+/g,' ')}
 function fnv1a(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return (h>>>0).toString(16)}
@@ -286,7 +287,8 @@ let invoices=(boot.invoices||[]).map(normalizeExp).filter(Boolean);
 let reminders=(boot.reminders||[]).map(normalizeRem).filter(Boolean);
 let notes=(boot.notes||[]).map(normalizeNote).filter(Boolean);
 let settings=Object.assign(defaultSettings(),boot.settings||{});
-const persist=()=>{save('den_tasks',tasks);save('den_days',days);save('den_expenses',expenses);save('den_invoices',invoices);save('den_reminders',reminders);save('den_notes',notes);save('den_settings',settings);persistCats()};
+var syncReady=false,syncTimer=0,syncBusy=false,syncApplying=false,syncSha=null;
+const persist=()=>{save('den_tasks',tasks);save('den_days',days);save('den_expenses',expenses);save('den_invoices',invoices);save('den_reminders',reminders);save('den_notes',notes);save('den_settings',settings);persistCats();scheduleSync()};
 function isLive(x){return !!(x&&!x.deleted)}
 function itemUpdatedAt(x){if(!x)return 0;const v=x.updatedAt!=null?x.updatedAt:x.updated;const n=Number(v);return Number.isFinite(n)?n:0}
 function touch(x){if(!x||typeof x!=='object')return x;const n=Date.now();x.updatedAt=n;x.updated=n;return x}
@@ -675,7 +677,7 @@ $('sheetSave').onclick=()=>{
   if(sheetMode==='settings'){
     const b=$('sBilled').value,s=$('sSpecial').value,r=Number($('sRate').value);
     if(!b||!s||!isFinite(r)||r<0){toast('Zkontroluj nastavení');return}
-    settings.billedUntil=b;settings.specialEnd=s;settings.rate=r;touch(settings);persist();
+    settings.billedUntil=b;settings.specialEnd=s;settings.rate=r;touch(settings);if($('sSyncToken')){const tok=$('sSyncToken').value.trim();if(tok)setSyncToken(tok)}persist();
     const key=($('sInboxKey')&&$('sInboxKey').value)||'';
     setInboxKeyRaw(key);
     closeSheet();if(view==='dochazka')renderDochazka();updateTotal();toast('Nastavení uloženo');
@@ -1032,7 +1034,6 @@ function renderDnes(){
   remChipBar($('remChips'),$('remDate'),$('remTime'));
   renderTodayRems();
   renderTodayNotes();
-  renderPendingMail();
   updateTotal();
 }
 
@@ -1364,11 +1365,11 @@ function openSettings(){
     '<div class="field"><label for="sRate">Hodinovka v Kč</label><input type="number" id="sRate" min="0" step="1" value="'+esc(settings.rate)+'"></div>'+
     '<div class="field"><label for="sInboxKey">Kód pro IS BOTa</label><input type="text" id="sInboxKey" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX" value="'+esc(getInboxKeyRaw())+'"></div>'+
     (inboxHint?'<p class="muted" id="inboxHintLine">'+esc(inboxHint)+'</p>':'')+
-    '<div class="field"><span class="lbl">Synchronizace</span><div class="muted">Telefon a počítač mají každý svá data. Pošli e-mail IS BOTovi — na boxu se sloučí a obě zařízení si je zase stáhnou. Při prvním spárování pošli všechno.</div></div>'+
-    '<button type="button" class="primary" id="fullSyncBtn">Odeslat vše (plná synchronizace)</button>'+
-    '<button type="button" class="secondary" id="syncNowBtn">Synchronizovat změny</button>'+
+    '<div class="field"><span class="lbl">Synchronizace</span><div class="muted">Změny se ukládají samy do soukromého úložiště. Na každém zařízení jednou vlož token úložiště (jen k repozitáři den-data) a stejný kód pro IS BOTa.</div></div>'+
+    '<div class="field"><label for="sSyncToken">Token úložiště</label><input type="password" id="sSyncToken" autocomplete="off" spellcheck="false" placeholder="github_pat_… nebo ponech prázdné, pokud už je uložený"></div>'+
+    '<button type="button" class="primary" id="syncNowBtn">Synchronizovat teď</button>'+
     '<div class="field"><span class="lbl">Kategorie</span><div class="cat-admin" id="catAdmin"></div></div>'+
-    '<div class="field"><span class="lbl">Záloha</span><div class="muted">Šifrovaná stejným kódem jako inbox. Při odeslání IS BOTovi se záloha nabídne ke sdílení.</div></div>'+
+    '<div class="field"><span class="lbl">Záloha</span><div class="muted">Šifrovaná stejným kódem jako inbox. Zálohu stáhneš nebo nasdílíš zde, kdykoli potřebuješ.</div></div>'+
     '<button type="button" class="secondary" id="backupExport">Stáhnout / sdílet zálohu</button>'+
     '<button type="button" class="secondary" id="backupImport">Obnovit ze souboru</button>'+
     '<p class="muted">Verze aplikace: '+APP_VERSION+'</p>'+
@@ -1377,8 +1378,7 @@ function openSettings(){
   const fu=$('forceUpdate');if(fu)fu.onclick=forceRefreshApp;
   const be=$('backupExport');if(be)be.onclick=()=>exportBackup();
   const bi=$('backupImport');if(bi)bi.onclick=()=>{const f=$('backupFile');if(f)f.click()};
-  const fs=$('fullSyncBtn');if(fs)fs.onclick=()=>{closeSheet();startFullSync()};
-  const sn=$('syncNowBtn');if(sn)sn.onclick=()=>{closeSheet();startSend('sync')};
+  const sn=$('syncNowBtn');if(sn)sn.onclick=()=>{const tok=$('sSyncToken')&&$('sSyncToken').value.trim();if(tok)setSyncToken(tok);closeSheet();syncNow('manual')};
   renderCatAdmin();
 }
 function renderCatAdmin(){
@@ -1710,51 +1710,6 @@ function splitPayload(p){
   const n=chunks.length;
   return chunks.map((c,i)=>packBody(dateLabel,Object.assign({},c,{_human:humanSummary(c)}),i+1,n));
 }
-function mailtoUrl(subject,body){
-  return 'mailto:'+TO+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);
-}
-function renderPendingMail(){
-  const box=$('pendingMail');
-  if(!pendingMails.length){box.hidden=true;box.innerHTML='';return}
-  box.hidden=false;
-  const left=pendingMails.length,total=pendingMails[0]._total;
-  const next=total-left+1;
-  box.innerHTML='<div class="card"><p style="margin:0 0 10px">Ještě zbývá odeslat část '+next+'/'+total+'.</p><button type="button" class="primary" id="sendNext">Odeslat další část</button></div>';
-  $('sendNext').onclick=()=>openNextMail(true);
-}
-function openNextMail(fromPending){
-  if(!pendingMails.length)return;
-  const m=pendingMails.shift();
-  window.__lastMailto=mailtoUrl(m.subject,m.body);
-  $('sendBtn').dataset.mailto=window.__lastMailto;
-  save('den_pending_mails',pendingMails);
-  location.href=window.__lastMailto;
-  if(!pendingMails.length){takeSnapshot();save('den_pending_mails',[]);toast('Odešli e-mail v poště')}
-  else toast('Odešli e-mail, pak pošli zbývající část');
-  renderPendingMail();
-}
-async function startSend(mode){
-  if(mode==='full')return startFullSync();
-  if(collectTodayExpense()==='bad'){toast('Doplň výdaj: za co a částku');return}
-  if(!saveTodayAttendance()&&collectTodayExpense()==='bad')return;
-  const p=collectChanges();
-  if(!hasChanges(p)){toast('Není co odeslat. Pro první sladění použij Odeslat vše.');return}
-  try{
-    const file=await makeBackupBlob();
-    if(file){
-      p.backup=true;p.backup_at=file.enc.at||nowStamp();
-      const r=await shareOrDownload(file.blob,file.name,'Den záloha');
-      if(r==='download')toast('Šifrovaná záloha je stažená, teď pošli e-mail');
-    }else if(!getInboxKey()){
-      /* záloha bez kódu nejde — e-mail pošleme stejně */
-    }
-  }catch(e){toast('Záloha se nepovedla, e-mail pošlu stejně')}
-  const mails=splitPayload(p);
-  pendingMails=mails.map((m,i)=>({subject:m.subject,body:m.body,_total:mails.length}));
-  openNextMail(false);
-}
-$('sendBtn').onclick=()=>{startSend()};
-
 function initForm(){
   if(initForm._done)return;
   const d=load('den_draft',null);
@@ -1787,70 +1742,8 @@ function bootUi(){
   renderDnes();
   handleHashImport();
   pollInbox('init');
-  pollState('init');
 }
 
-function dumpSyncState(){
-  return {
-    kind:'den-state',v:1,sync:'full',app:APP_VERSION,date:todayISO(),at:nowStamp(),
-    tasks:tasks.map(t=>Object.assign({},t)),
-    days:days.map(d=>Object.assign({},d)),
-    expenses:expenses.map(e=>Object.assign({},e)),
-    invoices:invoices.map(e=>Object.assign({},e)),
-    reminders:reminders.map(r=>Object.assign({},r)),
-    notes:notes.map(n=>Object.assign({},n)),
-    settings:Object.assign({},settings),
-    categories:customCats.map(c=>({id:c.id,name:c.name,color:c.color}))
-  };
-}
-function sliceSyncParts(state){
-  const dateLabel=czDate(state.date||todayISO());
-  const keys=['tasks','days','expenses','invoices','reminders','notes','categories'];
-  const chunks=[];
-  const empty=()=>{const o={kind:'den',sync:'full',date:state.date,settings:null,tasks:[],days:[],expenses:[],invoices:[],reminders:[],notes:[],categories:[]};return o};
-  let cur=empty();
-  cur.settings=state.settings;
-  const packSync=(obj,part,parts)=>{
-    const slim={kind:'den',sync:'full',date:obj.date};
-    if(parts>1){slim.part=part;slim.parts=parts}
-    if(obj.settings)slim.settings=obj.settings;
-    ['tasks','days','expenses','invoices','reminders','notes','categories'].forEach(k=>{if(obj[k]&&obj[k].length)slim[k]=obj[k]});
-    const human=parts>1?('Plná synchronizace Den ('+part+'/'+parts+')'):'Plná synchronizace Den';
-    const body=human+'\n\n---JSON---\n'+JSON.stringify(slim);
-    const subject=parts>1?('DEN sync '+dateLabel+' ('+part+'/'+parts+')'):('DEN sync '+dateLabel);
-    return {subject,body};
-  };
-  const fits=obj=>packSync(obj,1,1).body.length<=BODY_MAX-20;
-  keys.forEach(key=>{
-    (state[key]||[]).forEach(item=>{
-      const probe=JSON.parse(JSON.stringify(cur));
-      probe[key]=probe[key].concat([item]);
-      if(fits(probe))cur=probe;
-      else{
-        chunks.push(cur);
-        cur=empty();
-        cur[key]=[item];
-      }
-    });
-  });
-  chunks.push(cur);
-  const n=chunks.length;
-  return chunks.map((c,i)=>packSync(c,i+1,n));
-}
-async function startFullSync(){
-  tasks.forEach(t=>{if(!itemUpdatedAt(t))touch(t)});
-  days.forEach(d=>{if(!itemUpdatedAt(d))touch(d)});
-  expenses.forEach(e=>{if(!itemUpdatedAt(e))touch(e)});
-  invoices.forEach(e=>{if(!itemUpdatedAt(e))touch(e)});
-  reminders.forEach(r=>{if(!itemUpdatedAt(r))touch(r)});
-  notes.forEach(n=>{if(!itemUpdatedAt(n))touch(n)});
-  if(!itemUpdatedAt(settings))touch(settings);
-  persist();
-  const mails=sliceSyncParts(dumpSyncState());
-  pendingMails=mails.map((m,i)=>({subject:m.subject,body:m.body,_total:mails.length}));
-  toast(mails.length>1?('Připraveno '+mails.length+' e-mailů — odešli všechny'):'Odešli e-mail s kompletními daty');
-  openNextMail(false);
-}
 function mergeById(local, remote, keyFn){
   const map=new Map();
   const order=[];
@@ -1885,30 +1778,121 @@ function mergeRemoteState(data){
   if(data.settings&&typeof data.settings==='object'){
     if(itemUpdatedAt(data.settings)>=itemUpdatedAt(settings))settings=Object.assign({},settings,data.settings);
   }
-  persist();
+  syncApplying=true;persist();syncApplying=false;
   const after=JSON.stringify({t:tasks,d:days,e:expenses,i:invoices,r:reminders,n:notes,s:settings,c:customCats});
   return before===after?0:1;
 }
-let stateBusy=false,lastStateAt=0;
-async function pollState(reason){
-  const key=getInboxKey();
-  if(!key)return;
-  if(stateBusy)return;
-  if(reason!=='force'&&Date.now()-lastStateAt<2000)return;
-  stateBusy=true;lastStateAt=Date.now();
-  try{
-    const r=await fetch('state.enc?t='+Date.now(),{cache:'no-store'});
-    if(!r.ok)return;
-    const obj=await r.json();
-    if(!obj||!obj.salt||!obj.iv||!obj.ct)return;
-    let data;
-    try{data=await decryptInboxFile(obj,key)}catch(e){return}
-    if(!data||typeof data!=='object')return;
-    const changed=mergeRemoteState(data);
-    if(changed){refreshLists();toast('Data sladěna s druhým zařízením')}
-  }catch(e){}
-  finally{stateBusy=false}
+const SYNC_OWNER='FilipKubicny',SYNC_REPO='den-data',SYNC_PATH='state.enc';
+function getSyncToken(){return String(load('den_sync_token','')||'').trim()}
+function setSyncToken(v){save('den_sync_token',String(v||'').trim())}
+function setSyncStatus(kind,text){
+  const el=$('syncStatus');if(!el)return;
+  el.className='sync-status'+(kind?(' '+kind):'');
+  el.textContent=text;
 }
+function syncHeaders(){
+  const h={'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'};
+  const tok=getSyncToken();if(tok)h.Authorization='Bearer '+tok;
+  return h;
+}
+function syncUrl(){return 'https://api.github.com/repos/'+SYNC_OWNER+'/'+SYNC_REPO+'/contents/'+SYNC_PATH}
+function dumpCloudState(){
+  return {kind:'den-state',v:1,app:APP_VERSION,at:nowStamp(),tasks,days,expenses,invoices,reminders,notes,settings,categories:customCats,applied:loadAppliedInbox()};
+}
+async function githubGetState(){
+  const r=await fetch(syncUrl()+'?ref=main&t='+Date.now(),{cache:'no-store',headers:syncHeaders()});
+  if(r.status===404)return {missing:true};
+  if(r.status===401||r.status===403){const err=new Error('auth');err.code='auth';throw err}
+  if(!r.ok)throw new Error('get '+r.status);
+  const j=await r.json();
+  const raw=atob(String(j.content||'').replace(/\s/g,''));
+  return {sha:j.sha,obj:JSON.parse(raw)};
+}
+async function githubPutState(enc,sha){
+  const content=btoa(JSON.stringify(enc));
+  const body={message:'Den: automatické uložení stavu',content,branch:'main'};
+  if(sha)body.sha=sha;
+  const r=await fetch(syncUrl(),{method:'PUT',cache:'no-store',headers:Object.assign({'Content-Type':'application/json'},syncHeaders()),body:JSON.stringify(body)});
+  if(r.status===409||r.status===422){const err=new Error('conflict');err.code='conflict';throw err}
+  if(r.status===401||r.status===403){const err=new Error('auth');err.code='auth';throw err}
+  if(!r.ok)throw new Error('put '+r.status);
+  const j=await r.json();
+  return (j.content&&j.content.sha)||sha;
+}
+function queueOutbox(enc){save('den_sync_outbox',{at:Date.now(),enc})}
+function clearOutbox(){save('den_sync_outbox',null)}
+async function pullAndMerge(){
+  const key=getInboxKey();
+  if(!getSyncToken()){setSyncStatus('','Jen v tomto zařízení');return 0}
+  if(!key){setSyncStatus('warn','Doplň kód pro IS BOTa');return 0}
+  const got=await githubGetState();
+  if(got.missing)return 0;
+  syncSha=got.sha;
+  const data=await decryptInboxFile(got.obj,key);
+  if(!data||typeof data!=='object')return 0;
+  return mergeRemoteState(data);
+}
+async function pushMerged(){
+  const key=getInboxKey();
+  if(!getSyncToken()||!key)return;
+  if(!navigator.onLine){queueOutbox(await encryptBackup(dumpCloudState(),key));setSyncStatus('warn','Offline – uloží se později');return}
+  setSyncStatus('busy','Ukládám…');
+  let sha=syncSha;
+  for(let attempt=0;attempt<3;attempt++){
+    try{
+      if(!sha){
+        const got=await githubGetState();
+        if(!got.missing){
+          sha=got.sha;syncSha=sha;
+          const data=await decryptInboxFile(got.obj,key);
+          if(data)mergeRemoteState(data);
+        }
+      }
+      const enc=await encryptBackup(dumpCloudState(),key);
+      enc.kind='den-state-enc';
+      queueOutbox(enc);
+      const newSha=await githubPutState(enc,sha||undefined);
+      syncSha=newSha;
+      clearOutbox();
+      setSyncStatus('ok','Uloženo ✓');
+      return;
+    }catch(e){
+      if(e&&e.code==='conflict'){syncSha=null;sha=null;continue}
+      if(e&&e.code==='auth'){setSyncStatus('err','Token úložiště neplatí');return}
+      if(!navigator.onLine){setSyncStatus('warn','Offline – uloží se později');return}
+      setSyncStatus('err','Uložení se nepovedlo');
+      return;
+    }
+  }
+  setSyncStatus('err','Konflikt – zkus Synchronizovat teď');
+}
+function renderPendingMail(){}
+function scheduleSync(){
+  if(!syncReady||syncApplying)return;
+  if(!getSyncToken()){setSyncStatus('','Jen v tomto zařízení');return}
+  if(!navigator.onLine){setSyncStatus('warn','Offline – uloží se později')}
+  else setSyncStatus('busy','Ukládám…');
+  clearTimeout(syncTimer);
+  syncTimer=setTimeout(()=>{syncNow('auto')},2000);
+}
+async function syncNow(reason){
+  if(syncBusy)return;
+  if(!getSyncToken()){setSyncStatus('','Jen v tomto zařízení');return}
+  syncBusy=true;
+  try{
+    setSyncStatus('busy',(reason==='pull'||reason==='init')?'Načítám…':'Ukládám…');
+    const changed=await pullAndMerge();
+    if(changed)refreshLists();
+    await pushMerged();
+    if(changed&&reason!=='auto'&&reason!=='init')toast('Data sladěna');
+  }catch(e){
+    if(!navigator.onLine)setSyncStatus('warn','Offline – uloží se později');
+    else if(e&&e.code==='auth')setSyncStatus('err','Token úložiště neplatí');
+    else setSyncStatus('err','Synchronizace se nepovedla');
+  }finally{syncBusy=false}
+}
+function pollState(reason){return syncNow(reason||'pull')}
+
 
 function tableTasks(){
   if(taskTab==='all')return sortTasks(tasks.filter(t=>isLive(t)&&matchesCat(t)&&t.status!=='done')).concat(sortTasks(tasks.filter(t=>isLive(t)&&matchesCat(t)&&t.status==='done')));
@@ -1998,8 +1982,8 @@ function bulkDelete(){
 }
 function bindDesktopUi(){
   const news=$('deskNew');if(news)news.onclick=()=>openTaskSheet(null);
-  const ds=$('deskSync');if(ds)ds.onclick=()=>startSend('sync');
-  const sb=$('sbSync');if(sb)sb.onclick=()=>startSend('sync');
+  const ds=$('deskSync');if(ds)ds.onclick=()=>syncNow('manual');
+  const sb=$('sbSync');if(sb)sb.onclick=()=>syncNow('manual');
   const st=$('sbSettings');if(st)st.onclick=openSettings;
   const pr=$('deskPrint');if(pr)pr.onclick=()=>window.print();
   const sa=$('selAll');if(sa)sa.onchange=()=>{
@@ -2044,7 +2028,11 @@ document.addEventListener('visibilitychange',()=>{
   else{pollInbox('visible');pollState('visible')}
 });
 window.addEventListener('focus',()=>{if(uiReady&&!document.hidden){pollInbox('focus');pollState('focus')}});
-setInterval(()=>{if(!document.hidden&&uiReady){pollInbox('timer');pollState('timer')}},5*60*1000);
+setInterval(()=>{if(!document.hidden&&uiReady)pollInbox('timer')},5*60*1000);
+setInterval(()=>{if(!document.hidden&&uiReady)syncNow('pull')},90*1000);
+window.addEventListener('online',()=>{if(uiReady)syncNow('online')});
+window.addEventListener('offline',()=>setSyncStatus('warn','Offline – uloží se později'));
+(function firstSync(){syncNow('init').finally(()=>{syncReady=true})})();
 function setupSW(){
   if(!('serviceWorker' in navigator))return;
   navigator.serviceWorker.addEventListener('message',ev=>{

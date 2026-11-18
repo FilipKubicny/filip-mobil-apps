@@ -328,3 +328,10 @@ button:active,.chip:active,.fchip:active,.tab:active,.chk:active,.ghost-btn:acti
   #appSidebar .sb-nav button{gap:8px;padding:0 8px;font-size:13px}
 }
 
+
+.sync-status{flex:1;min-width:0;font-size:12px;font-weight:600;color:var(--muted);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 8px}
+.sync-status.ok{color:var(--ok)}
+.sync-status.busy{color:var(--accent)}
+.sync-status.warn{color:var(--warn)}
+.sync-status.err{color:var(--danger)}
+.nav-bar{gap:8px}
