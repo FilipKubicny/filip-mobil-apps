@@ -1,4 +1,5 @@
 (function(){
+const SETUP_RAW=(function(){try{const h=String(location.hash||'');const m=h.match(/[#&]setup=([A-Za-z0-9_\-]+)/);if(m){history.replaceState(null,'',location.pathname+location.search);return m[1]}}catch(e){}return ''})();
 const TO='b3b17pd7+mobil@mail.grokbot.com', BODY_MAX=1800, PAUSE=30;
 const MONTHS=['Leden','Únor','Březen','Duben','Květen','Červen','Červenec','Srpen','Září','Říjen','Listopad','Prosinec'];
 const WD=['Ne','Po','Út','St','Čt','Pá','So'];
@@ -20,7 +21,7 @@ const BUCKETS=[
 ];
 const STATUSES=[{id:'open',name:'Otevřené'},{id:'wip',name:'Rozpracované'},{id:'wait',name:'Čeká'},{id:'done',name:'Hotovo'}];
 const REPEATS=[{id:'',name:'Neopakuje se',short:'Neopakuje se'},{id:'daily',name:'Denně',short:'Denně'},{id:'weekly',name:'Týdně',short:'Týdně'},{id:'monthly',name:'Měsíčně',short:'Měsíčně'},{id:'workdays',name:'Pracovní dny',short:'Pracovní dny'}];
-const APP_VERSION=11.21,APP_LABEL='11.2.1',APP_NAME='Kompas';
+const APP_VERSION=12.0,APP_LABEL='12.0',APP_NAME='Kompas';
 try{localStorage.removeItem('den_lock')}catch(e){}
 try{localStorage.removeItem('den_pending_mails')}catch(e){}
 const CAT_REPAIR={'432daf02':'sva','7e50a6ef':'sva','97d85896':'sva','c47f2c69':'zam','59a4c2fe':'zam','b39cb988':'sva','727076df':'sva','83367aa7':'fre','6a18e6c6':'fre','79486842':'fre','83549cb7':'lin','3ef16c57':'ost','6443a152':'ost','738ca1f6':'fre','66c017e9':'zam','a1b882a7':'zam','249f1330':'zam','9c9d5258':'zam','354dbdf3':'zam','b9e025f0':'pul','4185f791':'pul','fbe7d7cd':'pul','aab0cba9':'sva','c6bfbc8d':'sva','4aeb6c08':'sva','a3d38c38':'sva','6e49be28':'ost','5b60e232':'ost','ee532219':'lin','deafdb98':'lin','527a770f':'inv','f19d2292':'inv','f2e4f1b8':'sva','875b1851':'fre','c0e70d5':'inv','802e913d':'ost'};
@@ -328,7 +329,7 @@ function syncTitle(){
   const name=viewTitle();
   const compact=document.documentElement.classList.contains('compact');
   if($('navTitle'))$('navTitle').textContent=compact?name:APP_NAME;
-  if($('largeTitle'))$('largeTitle').innerHTML=esc(name)+' <span class="ver" id="appVer">verze '+APP_VERSION+'</span>';
+  if($('largeTitle'))$('largeTitle').innerHTML=esc(name)+' <span class="ver" id="appVer">verze '+APP_LABEL+'</span>';
 }
 function setupCompactHeader(){
   if(setupCompactHeader._on)return;
@@ -703,8 +704,10 @@ function taskCard(t,opts){
   d.innerHTML='<button type="button" class="chk'+(t.status==='done'?' on':'')+'" aria-label="Hotovo">'+(t.status==='done'?'✓':'')+'</button>'+
     '<div class="body"><div class="ttext">'+esc(t.text)+'</div>'+(t.note?'<div class="tnote">'+esc(t.note)+'</div>':'')+
     '<div class="tmeta">'+meta.join('')+'</div></div>';
-  d.querySelector('.chk').onclick=ev=>{ev.stopPropagation();ev.currentTarget.classList.add('flash');toggleDone(t)};
-  if(!opts||opts.edit!==false)d.querySelector('.body').onclick=()=>openTaskSheet(t);
+  d.querySelector('.chk').onclick=ev=>{ev.stopPropagation();ev.currentTarget.classList.add('flash');haptic();toggleDone(t)};
+  d.querySelector('.chk').setAttribute('aria-label',t.status==='done'?'Vrátit mezi otevřené: '+t.text:'Označit hotovo: '+t.text);
+  if(!opts||opts.edit!==false){const b=d.querySelector('.body');b.onclick=()=>openTaskSheet(t);b.setAttribute('role','button');b.tabIndex=0;b.onkeydown=ev=>{if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();openTaskSheet(t)}}}
+  if(!opts||opts.swipe!==false)attachSwipe(d,{right:{label:t.status==='done'?'Vrátit':'Hotovo',fn:()=>toggleDone(t)},left:{label:'Smazat',fn:()=>softDelete(t,'task')}});
   return d;
 }
 function appendGroup(host,title,nodes,opts){
@@ -745,7 +748,7 @@ function renderTasks(){
   const hasAny=tasks.some(t=>isLive(t)&&matchesCat(t));
   if(!hasAny){
     empty.hidden=false;
-    empty.textContent=tasks.length?'V tomhle filtru zatím nic není.':'Zatím žádné úkoly. Přidej první, nebo vlož data.';
+    empty.innerHTML=tasks.length?emptyState('⌕','V tomhle filtru nic není','Zkus jinou kategorii nebo období.'):emptyState('✓','Zatím žádné úkoly','Přidej první tlačítkem +',{id:'task',label:'Přidat úkol'});bindEmptyButtons(empty);
     renderTaskTable();
     return;
   }
@@ -866,11 +869,14 @@ function openTaskSheet(task){
   setTimeout(()=>$('fText')&&$('fText').focus(),50);
 }
 function closeSheet(){$('overlay').hidden=true;if($('importOverlay').hidden)document.body.classList.remove('locked');sheetMode=null;sheetTarget=null;if($('sheetDelete')){$('sheetDelete').hidden=true;$('sheetDelete').textContent='Smazat'}if($('sheetSave')){$('sheetSave').hidden=false;$('sheetSave').textContent='Uložit'}}
-$('addTaskBtn').onclick=()=>openTaskSheet(null);
+$('addTaskBtn').onclick=()=>openQuickAdd('task');
+if($('quickFab'))$('quickFab').onclick=()=>{haptic();openQuickAdd()};
 $('sheetCancel').onclick=closeSheet;
 $('overlay').addEventListener('click',e=>{if(e.target===$('overlay'))closeSheet()});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(!$('importOverlay').hidden)closeImportSheet();else if(!$('overlay').hidden)closeSheet()}});
 $('sheetSave').onclick=()=>{
+  if(sheetMode==='quick'){submitQuickAdd();return}
+  if(sheetMode==='device-link'){closeSheet();return}
   if(sheetMode==='pair-accept'){submitPairAccept();return}
   if(sheetMode==='pair-share'){closeSheet();return}
   if(sheetMode==='settings'){
@@ -882,7 +888,7 @@ $('sheetSave').onclick=()=>{
     closeSheet();if(view==='dochazka')renderDochazka();updateTotal();toast('Nastavení uloženo');
     updatePairBanner();
     pollInbox('force');
-    if(hasSyncCreds())syncNow('manual');
+    if(hasSyncCreds())syncNow('auto');
     return;
   }
   if(sheetMode==='cat-edit'){
@@ -1015,7 +1021,7 @@ function todayTaskList(){
   const soon=open.filter(t=>!dueIds.has(t.id)&&(t.bucket==='tomorrow'||t.status==='wip'));
   const rest=soon.length?soon:open.filter(t=>!dueIds.has(t.id)).slice(0,8);
   const box=$('todayTasks');box.innerHTML='';
-  if(!due.length&&!rest.length){box.innerHTML='<p class="muted" style="margin:0">Žádné otevřené úkoly na teď.</p>';return}
+  if(!due.length&&!rest.length){box.innerHTML=emptyState('✓','Na teď máš hotovo','Nový úkol přidáš tlačítkem +',{id:'task',label:'Přidat úkol'});bindEmptyButtons(box);return}
   if(due.length)appendGroup(box,'Dnes / po termínu',due.map(t=>taskCard(t)));
   if(rest.length)appendGroup(box,due.length?'Další': '',rest.map(t=>taskCard(t)));
 }
@@ -1031,6 +1037,7 @@ $('quickAdd').onclick=()=>{
 
 function remWhenFrom(text,dateEl,timeEl){
   let date=dateEl.value,time=timeEl.value;
+  if(!date||!time){const q=parseQuick(text);if(!date&&q.date)date=q.date;if(!time&&q.time)time=q.time}
   const s=String(text||'').toLowerCase();
   const tm=s.match(/\b(\d{1,2})[:.](\d{2})\b/);
   if(!time&&tm)time=pad(tm[1])+':'+tm[2];
@@ -1071,8 +1078,10 @@ function remCard(r){
   const d=document.createElement('div');d.className='rem'+(r.done?' done':'');
   d.innerHTML='<button type="button" class="chk'+(r.done?' on':'')+'" aria-label="Hotovo">'+(r.done?'✓':'')+'</button>'+
     '<div class="body"><div class="ttext">'+esc(r.text)+'</div><div class="tnote">'+esc(formatWhen(r.when))+'</div></div>';
-  d.querySelector('.chk').onclick=ev=>{ev.stopPropagation();r.done=!r.done;touch(r);persist();renderDnes();renderRems()};
-  d.querySelector('.body').onclick=()=>openRemSheet(r);
+  d.querySelector('.chk').onclick=ev=>{ev.stopPropagation();toggleRemDone(r)};
+  d.querySelector('.chk').setAttribute('aria-label',(r.done?'Vrátit: ':'Hotovo: ')+r.text);
+  const rb=d.querySelector('.body');rb.onclick=()=>openRemSheet(r);rb.setAttribute('role','button');rb.tabIndex=0;rb.onkeydown=ev=>{if(ev.key==='Enter'){ev.preventDefault();openRemSheet(r)}};
+  attachSwipe(d,{right:{label:r.done?'Vrátit':'Hotovo',fn:()=>toggleRemDone(r)},left:{label:'Smazat',fn:()=>softDelete(r,'rem')}});
   return d;
 }
 function upcomingRems(){
@@ -1092,9 +1101,9 @@ function renderTodayRems(){
 function renderRems(){
   const up=$('remUpcoming'),dn=$('remDone');up.innerHTML='';dn.innerHTML='';
   const a=upcomingRems(),b=reminders.filter(r=>isLive(r)&&r.done).sort((x,y)=>String(y.when||'').localeCompare(String(x.when||'')));
-  if(!a.length)up.innerHTML='<div class="card muted">Žádné nadcházející připomínky.</div>';
+  if(!a.length){up.innerHTML=emptyState('🔔','Žádné připomínky','Napiš třeba „zítra v 8:00 zavolat dodavateli“',{id:'rem',label:'Přidat připomínku'});bindEmptyButtons(up)}
   else a.forEach(r=>up.appendChild(remCard(r)));
-  if(!b.length)dn.innerHTML='<div class="card muted">Zatím žádné hotové.</div>';
+  if(!b.length)dn.innerHTML='<p class="muted es-inline">Zatím žádné hotové.</p>';
   else b.forEach(r=>dn.appendChild(remCard(r)));
 }
 
@@ -1244,6 +1253,7 @@ function noteCard(n,compact){
     d.querySelector('[data-a="task"]').onclick=()=>openNoteTaskSheet(n);
     d.querySelector('[data-a="rem"]').onclick=()=>openNoteRemSheet(n);
     d.querySelector('[data-a="del"]').onclick=()=>deleteNote(n);
+    attachSwipe(d,{right:{label:'Na úkol',color:'var(--wip)',fn:()=>openNoteTaskSheet(n)},left:{label:'Smazat',fn:()=>deleteNote(n)}});
   }else{
     d.style.cursor='pointer';
     d.onclick=()=>startEditNote(n);
@@ -1256,7 +1266,7 @@ function renderNotes(){
   const list=$('noteList'),empty=$('noteEmpty');
   list.innerHTML='';
   const arr=sortedNotes();
-  if(!arr.length){empty.hidden=false;return}
+  if(!arr.length){empty.hidden=false;empty.innerHTML=emptyState('✎','Zatím žádné poznámky','Napiš nebo nadiktuj, co tě napadne. Ukládá se samo.');return}
   empty.hidden=true;
   arr.forEach(n=>list.appendChild(noteCard(n,false)));
 }
@@ -1285,7 +1295,7 @@ function renderDnes(){
   $('todayLabel').textContent=WD[d.getDay()]+' '+d.getDate()+'. '+(d.getMonth()+1)+'. '+d.getFullYear();
   const oc=$('onboardCard');
   if(oc){
-    oc.hidden=!!settings.seenOnboard;
+    oc.hidden=true;
     const ok=$('onboardOk');
     if(ok)ok.onclick=()=>{settings.seenOnboard=true;persist();oc.hidden=true};
   }
@@ -1714,29 +1724,51 @@ function openSettings(){
   sheetMode='settings';sheetTarget=null;
   $('sheetTitle').textContent='Nastavení';
   $('sheetDelete').hidden=true;
-  $('sheetBody').innerHTML='<div class="field"><label for="sBilled">Vyfakturováno do (včetně)</label><input type="date" id="sBilled" value="'+esc(settings.billedUntil)+'"></div>'+
-    '<div class="field"><label for="sSpecial">Konec přechodného období</label><input type="date" id="sSpecial" value="'+esc(settings.specialEnd)+'"><div class="muted">Teď 16. 10. – 30. 11. 2026, potom celé kalendářní měsíce.</div></div>'+
-    '<div class="field"><label for="sRate">Hodinovka v Kč</label><input type="number" id="sRate" min="0" step="1" value="'+esc(settings.rate)+'"></div>'+
-    '<div class="field"><label for="sInboxKey">Kód pro IS BOTa</label><input type="text" id="sInboxKey" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX" value="'+esc(getInboxKeyRaw())+'"></div>'+
-    (inboxHint?'<p class="muted" id="inboxHintLine">'+esc(inboxHint)+'</p>':'')+
-    '<div class="field"><span class="lbl">Synchronizace</span><div class="muted">Změny se ukládají samy. Nové zařízení připojíš tlačítkem Připojit další zařízení — naskenuješ QR kód a zadáš šestimístný kód.</div></div>'+
-    '<div class="field"><label for="sSyncToken">Token úložiště</label><input type="password" id="sSyncToken" autocomplete="off" spellcheck="false" placeholder="'+(getSyncToken()?'Token je uložený – nový zadej jen při změně':'github_pat_…')+'"><div class="muted" id="sTokenHint">'+(getSyncToken()?'Token je uložený na tomto zařízení.':'')+'</div></div>'+
-    '<button type="button" class="primary" id="syncNowBtn">Synchronizovat teď</button>'+
-    '<button type="button" class="secondary" id="pairShareBtn">Připojit další zařízení</button>'+
-    '<button type="button" class="secondary" id="pairAcceptBtn">Vložit párovací odkaz</button>'+
+  if($('sheetSave')){$('sheetSave').hidden=false;$('sheetSave').textContent='Hotovo'}
+  const linked=hasSyncCreds();
+  const cur=$('syncStatus');
+  $('sheetBody').innerHTML=
+    '<div class="set-card">'+
+      '<div class="set-row"><span class="lbl">Synchronizace</span><span id="setSyncState" class="'+esc(cur?cur.className:'sync-status')+'">'+esc(cur?cur.textContent:'')+'</span></div>'+
+      '<p class="muted small">'+(linked?'Vše se ukládá a stahuje samo – při každé změně i při otevření aplikace. Aplikace se sama aktualizuje.':'Kompas zatím není propojený s úložištěm.')+'</p>'+
+      (linked?'<button type="button" class="primary" id="devLinkBtn">Přidat další zařízení</button>':'<button type="button" class="primary" id="linkNowBtn">Propojit</button>')+
+    '</div>'+
     '<div class="field"><span class="lbl">Kategorie</span><div class="cat-admin" id="catAdmin"></div></div>'+
-    '<div class="field"><span class="lbl">Záloha</span><div class="muted">Šifrovaná stejným kódem jako inbox. Zálohu stáhneš nebo nasdílíš zde, kdykoli potřebuješ.</div></div>'+
+    '<div class="field"><span class="lbl">Fakturace</span></div>'+
+    '<div class="field"><label for="sBilled">Vyfakturováno do (včetně)</label><input type="date" id="sBilled" value="'+esc(settings.billedUntil)+'"></div>'+
+    '<div class="field"><label for="sSpecial">Konec přechodného období</label><input type="date" id="sSpecial" value="'+esc(settings.specialEnd)+'"><div class="muted small">Teď 16. 10. – 30. 11. 2026, potom celé kalendářní měsíce.</div></div>'+
+    '<div class="field"><label for="sRate">Hodinovka v Kč</label><input type="number" id="sRate" min="0" step="1" inputmode="numeric" value="'+esc(settings.rate)+'"></div>'+
+    '<div class="field"><span class="lbl">Záloha</span><div class="muted small">Šifrovaná záloha všech dat do souboru.</div></div>'+
     '<button type="button" class="secondary" id="backupExport">Stáhnout / sdílet zálohu</button>'+
     '<button type="button" class="secondary" id="backupImport">Obnovit ze souboru</button>'+
-    '<p class="muted">Verze aplikace: '+APP_VERSION+'</p>'+
-    '<button type="button" class="secondary" id="forceUpdate">Aktualizovat aplikaci</button>';
+    '<details class="advanced" id="advBox"><summary>Pokročilé</summary>'+
+      '<div class="field"><label for="sInboxKey">Kód pro IS BOTa</label><input type="text" id="sInboxKey" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX" value="'+esc(getInboxKeyRaw())+'"></div>'+
+      (inboxHint?'<p class="muted" id="inboxHintLine">'+esc(inboxHint)+'</p>':'')+
+      '<div class="field"><label for="sSyncToken">Token úložiště</label><input type="password" id="sSyncToken" autocomplete="off" spellcheck="false" placeholder="'+(getSyncToken()?'Token je uložený – nový zadej jen při změně':'github_pat_…')+'"><div class="muted small" id="sTokenHint">'+(getSyncToken()?'Token je uložený na tomto zařízení.':'')+'</div></div>'+
+      '<button type="button" class="secondary" id="syncNowBtn">Synchronizovat teď</button>'+
+      '<button type="button" class="secondary" id="pairShareBtn">Spárovat přes QR a PIN</button>'+
+      '<button type="button" class="secondary" id="pairAcceptBtn">Vložit odkaz nebo data</button>'+
+      '<button type="button" class="secondary" id="forceUpdate">Aktualizovat aplikaci</button>'+
+      '<p class="muted small">Kompas '+esc(APP_LABEL)+'</p>'+
+    '</details>';
   $('overlay').hidden=false;document.body.classList.add('locked');
-  const fu=$('forceUpdate');if(fu)fu.onclick=forceRefreshApp;
-  const be=$('backupExport');if(be)be.onclick=()=>exportBackup();
-  const bi=$('backupImport');if(bi)bi.onclick=()=>{const f=$('backupFile');if(f)f.click()};
-  const sn=$('syncNowBtn');if(sn)sn.onclick=()=>{const cred=saveCredsFromForm();if(!cred.ok){toast(cred.err);setSyncStatus('warn',cred.err);return}closeSheet();syncNow('manual')};
-  const ps=$('pairShareBtn');if(ps)ps.onclick=()=>{const cred=saveCredsFromForm();if(!cred.ok){toast(cred.err);return}if(!hasSyncCreds()){toast('Nejdřív vyplň token a kód pro IS BOTa');return}openPairShare()};
-  const pa=$('pairAcceptBtn');if(pa)pa.onclick=()=>openPairAccept('','');
+  const on=(id,fn)=>{const b=$(id);if(b)b.onclick=fn};
+  on('forceUpdate',forceRefreshApp);
+  on('backupExport',()=>exportBackup());
+  on('backupImport',()=>{const f=$('backupFile');if(f)f.click()});
+  on('devLinkBtn',openDeviceLink);
+  on('linkNowBtn',()=>{closeSheet();try{sessionStorage.removeItem('kompas_welcome_skip')}catch(e){}showWelcome()});
+  on('syncNowBtn',()=>{const cred=saveCredsFromForm();if(!cred.ok){toast(cred.err);setSyncStatus('warn',cred.err);return}closeSheet();syncNow('manual')});
+  on('pairShareBtn',()=>{const cred=saveCredsFromForm();if(!cred.ok){toast(cred.err);return}if(!hasSyncCreds()){toast('Kompas zatím není propojený');return}openPairShare()});
+  on('pairAcceptBtn',()=>{closeSheet();startPasteImport()});
+  const autosave=()=>{
+    const b=$('sBilled').value,sp=$('sSpecial').value,r=Number($('sRate').value);
+    if(!b||!sp||!isFinite(r)||r<0)return;
+    if(settings.billedUntil===b&&settings.specialEnd===sp&&Number(settings.rate)===r)return;
+    settings.billedUntil=b;settings.specialEnd=sp;settings.rate=r;touch(settings);persist();
+    if(view==='dochazka')renderDochazka();updateTotal();toast('Uloženo');
+  };
+  ['sBilled','sSpecial','sRate'].forEach(id=>{const el=$(id);if(el)el.addEventListener('change',autosave)});
   bindCredFields();
   renderCatAdmin();
 }
@@ -1913,6 +1945,7 @@ async function startPasteImport(){
   let text='';
   try{if(navigator.clipboard&&navigator.clipboard.readText)text=(await navigator.clipboard.readText())||''}catch(e){}
   text=String(text).trim();
+  if(extractSetupPacked(text)){acceptPasted(text);return}
   const packed=extractPairPacked(text);
   if(packed){openPairAccept(text,packed);return}
   if(text){
@@ -1926,6 +1959,7 @@ $('importOverlay').addEventListener('click',e=>{if(e.target===$('importOverlay')
 $('importGo').onclick=()=>{
   const text=$('importText').value.trim();
   if(!text){toast('Vlož odkaz nebo kód');return}
+  if(extractSetupPacked(text)){closeImportSheet();acceptPasted(text);return}
   const packed=extractPairPacked(text);
   if(packed){closeImportSheet();openPairAccept(text,packed);return}
   let b;try{b=parseImportedBundle(text)}catch(e){toast('Import se nepovedl');return}
@@ -2388,6 +2422,10 @@ function setSyncStatus(kind,text){
   const el=$('syncStatus');if(!el)return;
   el.className='sync-status'+(kind?(' '+kind):'');
   el.textContent=text;
+  const n=arr=>(arr||[]).filter(isLive).length;
+  el.title=kind==='ok'?(czCount(n(tasks),'úkol','úkoly','úkolů')+', '+czCount(n(days),'den','dny','dní')+', '+czCount(n(notes),'poznámka','poznámky','poznámek')):text;
+  const sb=$('sbSyncState');if(sb){sb.className='sync-status '+(kind||'');sb.textContent=text}
+  const ss=$('setSyncState');if(ss){ss.className='sync-status '+(kind||'');ss.textContent=text}
 }
 function syncHeaders(){
   const h={'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'};
@@ -2442,10 +2480,10 @@ function classifySyncError(e){
   if(e&&e.code==='offline')return {code:'offline',msg:'Jsi offline, uloží se později'};
   if(!navigator.onLine)return {code:'offline',msg:'Jsi offline, uloží se později'};
   if(!e)return {code:'fail',msg:'Synchronizace se nepovedla'};
-  if(e.code==='auth'||e.status===401||e.status===403)return {code:'auth',msg:'Token úložiště neplatí'};
+  if(e.code==='auth'||e.status===401||e.status===403)return {code:'auth',msg:'Přístup k úložišti vypršel'};
   if(e.code==='nokey')return {code:'nokey',msg:'Doplň kód pro IS BOTa v Nastavení'};
   if(e.code==='notoken')return {code:'notoken',msg:'V Nastavení vlož token úložiště'};
-  if(e.code==='conflict')return {code:'conflict',msg:'Konflikt – zkus Synchronizovat teď'};
+  if(e.code==='conflict')return {code:'conflict',msg:'Ukládání se opakuje…'};
   if(e.code==='badstate')return {code:'fail',msg:'Stav z úložiště nejde přečíst'};
   if(isDecryptError(e))return {code:'decrypt',msg:'Kód pro IS BOTa nesedí'};
   if(e.name==='AbortError'||e.code==='timeout')return {code:'timeout',msg:'Vypršel čas, zkus to znovu'};
@@ -2556,7 +2594,7 @@ async function pushMerged(){
 function renderPendingMail(){}
 function scheduleSync(){
   if(!syncReady||syncApplying)return;
-  if(!getSyncToken()){updatePairBanner();setSyncStatus('warn','Není spárované');return}
+  if(!getSyncToken()){updatePairBanner();setSyncStatus('warn','Nepropojeno');return}
   if(!navigator.onLine){setSyncStatus('warn','Offline – uloží se později')}
   else setSyncStatus('busy','Ukládám…');
   clearTimeout(syncTimer);
@@ -2571,13 +2609,10 @@ async function syncNow(reason){
     await new Promise(resolve=>syncWaiters.push(resolve));
     return syncNow(reason);
   }
-  if(!getSyncToken()){
+  if(!getSyncToken()||!getInboxKey()){
     updatePairBanner();
-    showSyncOutcome('warn','V Nastavení vlož token úložiště',manual);
-    return;
-  }
-  if(!getInboxKey()){
-    showSyncOutcome('warn','Doplň kód pro IS BOTa v Nastavení',manual);
+    setSyncStatus('warn','Nepropojeno');
+    if(manual)showWelcome();
     return;
   }
   syncBusy=true;
@@ -2588,7 +2623,7 @@ async function syncNow(reason){
     if(changed)refreshLists();
     await pushMerged();
     const okText=syncCountText();
-    setSyncStatus('ok',okText);
+    setSyncStatus('ok','Uloženo ✓');
     if(manual||(changed&&reason!=='auto'&&reason!=='init'&&reason!=='resume'&&reason!=='visible'&&reason!=='focus'&&reason!=='pageshow'))toast(changed?'Data sladěna · '+okText:okText);
   }catch(e){
     const out=classifySyncError(e);
@@ -2719,9 +2754,418 @@ function bindShortcuts(){
     }
     if(ev.key==='Enter'&&!typing&&!$('overlay').hidden&&sheetMode==='task'){ev.preventDefault();$('sheetSave')&&$('sheetSave').click();return}
     if(typing)return;
-    if(ev.key==='n'||ev.key==='N'){ev.preventDefault();setView('ukoly');openTaskSheet(null);return}
+    if(ev.key==='n'||ev.key==='N'){ev.preventDefault();openQuickAdd();return}
     if(ev.key==='/'){ev.preventDefault();const q=$('searchQ');if(q){q.focus();q.select()}return}
   });
+}
+
+/* ================= Kompas 12: zero-config, quick add, swipe, pull to refresh ================= */
+function haptic(kind){try{if(navigator.vibrate)navigator.vibrate(kind==='heavy'?[12,40,12]:kind==='warn'?[20,30,20]:8)}catch(e){}}
+function prefersReducedMotion(){try{return matchMedia('(prefers-reduced-motion: reduce)').matches}catch(e){return false}}
+function emptyState(icon,title,sub,btn){
+  return '<div class="empty-state" role="note"><div class="es-ico" aria-hidden="true">'+icon+'</div><div class="es-title">'+esc(title)+'</div>'+(sub?'<div class="es-sub">'+esc(sub)+'</div>':'')+(btn?'<button type="button" class="secondary es-btn" data-es="'+esc(btn.id)+'">'+esc(btn.label)+'</button>':'')+'</div>';
+}
+function bindEmptyButtons(host){
+  if(!host)return;
+  host.querySelectorAll('[data-es]').forEach(b=>{b.onclick=()=>openQuickAdd(b.dataset.es)});
+}
+
+/* ---------- Czech natural-language date/time ---------- */
+const CZ_WD=[['nedel','ne'],['pondel','po'],['uter','ut'],['stred','st'],['ctvrt','ct'],['pat','pa'],['sobot','so']];
+function czFold(s){return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')}
+const CZ_NUM={jeden:1,jednu:1,jedna:1,dva:2,dve:2,tri:3,ctyri:4,pet:5,sest:6,sedm:7,osm:8,devet:9,deset:10,dvanact:12,ctrnact:14};
+function parseQuick(input,nowDate){
+  const now=nowDate||new Date();
+  const today=toISO(now);
+  let text=String(input||'');
+  let date='',time='',matched=[];
+  const cut=(re,fn)=>{
+    const f=czFold(text);
+    const m=f.match(re);
+    if(!m)return false;
+    const res=fn(m);
+    if(res===false)return false;
+    text=(text.slice(0,m.index)+' '+text.slice(m.index+m[0].length));
+    matched.push(m[0].trim());
+    return true;
+  };
+  const num=s=>{const n=Number(s);return isFinite(n)?n:(CZ_NUM[s]||null)};
+  const dayPart=()=>{
+    if(time)return;
+    cut(/(?:^|\s)(?:rano|dopoledne)(?=\s|$|[,.!?])/,m=>{time=/dopoledne/.test(m[0])?'10:00':'08:00'});
+    if(!time)cut(/(?:^|\s)odpoledne(?=\s|$|[,.!?])/,()=>{time='14:00'});
+    if(!time)cut(/(?:^|\s)vecer(?=\s|$|[,.!?])/,()=>{time='19:00'});
+  };
+  // dates
+  cut(/(?:^|\s)pozitri(?=\s|$|[,.!?])/,()=>{date=addDays(today,2)})||
+  cut(/(?:^|\s)zitra(?=\s|$|[,.!?])/,()=>{date=addDays(today,1)})||
+  cut(/(?:^|\s)dnes(?:ka)?(?=\s|$|[,.!?])/,()=>{date=today})||
+  cut(/(?:^|\s)za\s+(\d+|[a-z]+)\s+(dni|dny|den|dnu)(?=\s|$|[,.!?])/,m=>{const n=num(m[1]);if(!n)return false;date=addDays(today,n)})||
+  cut(/(?:^|\s)za\s+(?:(\d+|[a-z]+)\s+)?(tyden|tydny|tydnu|tydne)(?=\s|$|[,.!?])/,m=>{const n=m[1]?num(m[1]):1;if(!n)return false;date=addDays(today,7*n)})||
+  cut(/(?:^|\s)za\s+(?:(\d+|[a-z]+)\s+)?(mesic|mesice|mesicu)(?=\s|$|[,.!?])/,m=>{const n=m[1]?num(m[1]):1;if(!n)return false;date=addMonthsISO(today,n)})||
+  cut(/(?:^|\s)(?:pristi|dalsi)\s+tyden(?=\s|$|[,.!?])/,()=>{const d=parseISO(today);const dow=(d.getDay()+6)%7;date=addDays(today,7-dow)})||
+  cut(/(?:^|\s)(\d{1,2})\.\s?(\d{1,2})\.(?:\s?(\d{4}))?(?=\s|$|[,!?])/,m=>{
+    const dd=+m[1],mm=+m[2];if(dd<1||dd>31||mm<1||mm>12)return false;
+    let y=m[3]?+m[3]:now.getFullYear();
+    let iso=y+'-'+pad(mm)+'-'+pad(dd);
+    if(!m[3]&&iso<today)iso=(y+1)+'-'+pad(mm)+'-'+pad(dd);
+    date=iso;
+  })||
+  cut(/(?:^|\s)(?:v|ve|na|do|tento|tuto|pristi)?\s*(nedel[ieu]?|pondel[ki]?|uter[yk]?|stred[auy]?|ctvrt(?:ek|ka)?|pat(?:ek|ku)|sobot[auy]?)(?=\s|$|[,.!?])/,m=>{
+    const w=m[1];const idx=CZ_WD.findIndex(([full])=>w.startsWith(full));if(idx<0)return false;
+    const d=parseISO(today);let diff=(idx-d.getDay()+7)%7;if(diff===0)diff=7;
+    date=addDays(today,diff);
+  });
+  // times
+  cut(/(?:^|\s)(?:v|ve|od|na|kolem|o)?\s*(\d{1,2})[:.](\d{2})(?:\s*(?:h|hod|hodin))?(?=\s|$|[,.!?])/,m=>{const h=+m[1],mi=+m[2];if(h>23||mi>59)return false;time=pad(h)+':'+pad(mi)});
+  if(!time)cut(/(?:^|\s)(?:v|ve|o|na|kolem)\s+(\d{1,2})(?:\s*(?:h|hod|hodin|hodiny))?(?=\s|$|[,.!?])/,m=>{const h=+m[1];if(h>23)return false;time=pad(h)+':00'});
+  if(!time)cut(/(?:^|\s)(\d{1,2})\s*(?:h|hod|hodin)(?=\s|$|[,.!?])/,m=>{const h=+m[1];if(h>23)return false;time=pad(h)+':00'});
+  if(!time)cut(/(?:^|\s)(?:v\s+)?poledne(?=\s|$|[,.!?])/,()=>{time='12:00'});
+  dayPart();
+  text=text.replace(/\s{2,}/g,' ').replace(/\s+([,.!?])/g,'$1').trim().replace(/^[,.\-–\s]+|[,\-–\s]+$/g,'');
+  if(time&&!date){date=today;if(time<=pad(now.getHours())+':'+pad(now.getMinutes()))date=addDays(today,1)}
+  const kind=time?'rem':'task';
+  return {text:text||String(input||'').trim(),date,time,kind,matched};
+}
+function bucketForDate(iso){
+  if(!iso)return 'tomorrow';
+  const diff=Math.round((parseISO(iso)-parseISO(todayISO()))/86400000);
+  if(diff<=1)return 'tomorrow';
+  if(diff<=14)return 'weeks';
+  if(diff<=120)return 'months';
+  return 'long';
+}
+function quickWhenLabel(p){
+  if(!p.date&&!p.time)return '';
+  const t=todayISO();
+  let d=p.date===t?'dnes':p.date===addDays(t,1)?'zítra':p.date===addDays(t,2)?'pozítří':czDateLong(p.date);
+  return d+(p.time?' v '+p.time:'');
+}
+
+try{window.__kompas={parseQuick,version:APP_LABEL}}catch(e){}
+/* ---------- Quick add sheet (FAB) ---------- */
+let quickKind='auto';
+function openQuickAdd(preset){
+  sheetMode='quick';sheetTarget=null;
+  quickKind=preset==='note'||preset==='rem'||preset==='task'?preset:'auto';
+  if(!preset&&view==='notes')quickKind='note';
+  if(!preset&&view==='rems')quickKind='rem';
+  $('sheetTitle').textContent='Rychle přidat';
+  $('sheetDelete').hidden=true;
+  if($('sheetSave')){$('sheetSave').hidden=false;$('sheetSave').textContent='Přidat'}
+  $('sheetBody').innerHTML=
+    '<div class="seg" role="radiogroup" aria-label="Typ" id="qaKind">'+
+      [['auto','Automaticky'],['task','Úkol'],['rem','Připomínka'],['note','Poznámka']].map(([id,l])=>'<button type="button" role="radio" data-k="'+id+'">'+l+'</button>').join('')+
+    '</div>'+
+    '<div class="field"><label for="qaText" class="sr-only">Text</label><textarea id="qaText" rows="3" enterkeyhint="done" placeholder="Např. zítra v 8:00 zavolat dodavateli"></textarea></div>'+
+    '<div class="qa-preview" id="qaPreview" aria-live="polite"></div>'+
+    '<div class="field" id="qaCatWrap"><span class="lbl">Kategorie</span><div class="chips" id="qaCat"></div></div>'+
+    '<p class="muted qa-hint">Rozumím: dnes, zítra, pozítří, pondělí–neděle, za týden, za 3 dny, příští týden, 24. 11., v 8:00, ráno, večer.</p>';
+  let cat=view==='ukoly'&&taskFilter!=='all'?taskFilter:'ost';
+  const paintKind=()=>$('qaKind').querySelectorAll('button').forEach(b=>{const on=b.dataset.k===quickKind;b.classList.toggle('on',on);b.setAttribute('aria-checked',on?'true':'false')});
+  const paintCat=()=>paintCatPicker($('qaCat'),cat,id=>{cat=id;paintCat()});
+  const upd=()=>{
+    const p=parseQuick($('qaText').value);
+    const k=quickKind==='auto'?p.kind:quickKind;
+    $('overlay')._quick={p,k,cat};
+    const lab=quickWhenLabel(p);
+    const kindName={task:'Úkol',rem:'Připomínka',note:'Poznámka'}[k];
+    let s='';
+    if($('qaText').value.trim()){
+      s='<span class="qa-kind k-'+k+'">'+kindName+'</span>';
+      if(k!=='note'&&lab)s+=' <span class="qa-when">'+esc(k==='task'?'termín '+lab:lab)+'</span>';
+      if(k==='task'&&!p.date)s+=' <span class="qa-when">'+esc(buckBy('tomorrow').name)+'</span>';
+    }
+    $('qaPreview').innerHTML=s;
+    $('qaCatWrap').hidden=k!=='task';
+  };
+  $('qaKind').querySelectorAll('button').forEach(b=>b.onclick=()=>{quickKind=b.dataset.k;paintKind();upd();haptic()});
+  $('qaText').addEventListener('input',upd);
+  $('qaText').addEventListener('keydown',ev=>{if(ev.key==='Enter'&&!ev.shiftKey){ev.preventDefault();submitQuickAdd()}});
+  paintKind();paintCat();upd();
+  $('overlay')._quickCat=()=>cat;
+  $('overlay').hidden=false;document.body.classList.add('locked');
+  setTimeout(()=>$('qaText')&&$('qaText').focus(),60);
+}
+function submitQuickAdd(){
+  const raw=($('qaText')&&$('qaText').value||'').trim();
+  if(!raw){toast('Napiš, co přidat');return}
+  const p=parseQuick(raw);
+  const k=quickKind==='auto'?p.kind:quickKind;
+  const cat=$('overlay')._quickCat?$('overlay')._quickCat():'ost';
+  let item=null,arr=null,msg='';
+  if(k==='note'){
+    item=normalizeNote({id:uid('n'),text:raw,at:nowStamp()});touch(item);notes.push(item);arr='notes';msg='Poznámka uložena';
+  }else if(k==='rem'){
+    const when=(p.date||todayISO())+'T'+(p.time||'09:00');
+    item=normalizeRem({id:uid('r'),text:p.text,when,done:false,created:todayISO()});touch(item);reminders.push(item);arr='rems';
+    msg='Připomínka · '+quickWhenLabel({date:when.slice(0,10),time:when.slice(11,16)});
+  }else{
+    item=normalizeTask({id:uid('t'),text:p.date?p.text:raw,cat,bucket:bucketForDate(p.date),status:'open',due:p.date||'',created:todayISO()});touch(item);tasks.push(item);arr='tasks';
+    msg='Úkol přidán'+(p.date?' · termín '+quickWhenLabel({date:p.date}):'');
+  }
+  persist();closeSheet();refreshLists();haptic();
+  toast(msg,{label:'Zpět',fn:()=>{item.deleted=true;touch(item);persist();refreshLists()}});
+}
+
+/* ---------- Swipe actions ---------- */
+function attachSwipe(el,opts){
+  if(!el||!opts)return el;
+  el.classList.add('swipeable');
+  const L=opts.left,R=opts.right;
+  if(R){el.dataset.swR=R.label;el.style.setProperty('--swR',R.color||'var(--ok)')}
+  if(L){el.dataset.swL=L.label;el.style.setProperty('--swL',L.color||'var(--danger)')}
+  let sx=0,sy=0,dx=0,active=false,decided=false,horiz=false,id=null;
+  const TH=88;
+  const reset=()=>{el.classList.remove('swiping','sw-r','sw-l','sw-arm');el.style.setProperty('--sx','0px')};
+  el.addEventListener('pointerdown',ev=>{
+    if(ev.pointerType==='mouse'&&ev.button!==0)return;
+    if(ev.target.closest('a,input,textarea,select,.note-actions'))return;
+    sx=ev.clientX;sy=ev.clientY;dx=0;active=true;decided=false;horiz=false;id=ev.pointerId;
+  });
+  el.addEventListener('pointermove',ev=>{
+    if(!active||ev.pointerId!==id)return;
+    const mx=ev.clientX-sx,my=ev.clientY-sy;
+    if(!decided){
+      if(Math.abs(mx)<8&&Math.abs(my)<8)return;
+      decided=true;horiz=Math.abs(mx)>Math.abs(my)*1.3;
+      if(!horiz){active=false;return}
+      try{el.setPointerCapture(id)}catch(e){}
+      el.classList.add('swiping');
+    }
+    if(!horiz)return;
+    dx=mx;
+    if(dx>0&&!R)dx=Math.min(dx,12);
+    if(dx<0&&!L)dx=Math.max(dx,-12);
+    el.style.setProperty('--sx',dx+'px');
+    el.classList.toggle('sw-r',dx>0);el.classList.toggle('sw-l',dx<0);
+    const arm=Math.abs(dx)>TH;
+    if(arm!==el.classList.contains('sw-arm')){el.classList.toggle('sw-arm',arm);if(arm)haptic()}
+    ev.preventDefault();
+  });
+  const end=ev=>{
+    if(!active)return;active=false;
+    if(!horiz){return}
+    el._swipedAt=Date.now();
+    const go=dx>TH&&R?R:dx<-TH&&L?L:null;
+    if(go&&!prefersReducedMotion()){
+      el.style.setProperty('--sx',(dx>0?1:-1)*el.offsetWidth+'px');
+      setTimeout(()=>{reset();go.fn()},160);
+    }else{reset();if(go)go.fn()}
+  };
+  el.addEventListener('pointerup',end);
+  el.addEventListener('pointercancel',()=>{active=false;reset()});
+  el.addEventListener('click',ev=>{if(el._swipedAt&&Date.now()-el._swipedAt<350){ev.stopPropagation();ev.preventDefault()}},true);
+  return el;
+}
+function softDelete(item,kind){
+  if(!item)return;
+  item.deleted=true;touch(item);
+  persist();refreshLists();haptic('heavy');
+  toast(({task:'Úkol smazán',rem:'Připomínka smazána',note:'Poznámka smazána'})[kind]||'Smazáno',{label:'Zpět',fn:()=>{item.deleted=false;touch(item);persist();refreshLists()}});
+}
+function toggleRemDone(r){
+  const was=r.done;r.done=!r.done;touch(r);persist();refreshLists();haptic();
+  toast(r.done?'Připomínka hotová':'Vráceno',{label:'Zpět',fn:()=>{r.done=was;touch(r);persist();refreshLists()}});
+}
+
+/* ---------- Pull to refresh ---------- */
+function setupPullToRefresh(){
+  const ind=$('ptr');if(!ind)return;
+  let y0=null,dy=0,armed=false,busy=false;
+  const lockedUi=()=>!$('overlay').hidden||!$('importOverlay').hidden||($('welcome')&&!$('welcome').hidden);
+  window.addEventListener('touchstart',ev=>{
+    if(busy||lockedUi()||(window.scrollY||0)>0||ev.touches.length!==1){y0=null;return}
+    y0=ev.touches[0].clientY;dy=0;armed=false;
+  },{passive:true});
+  window.addEventListener('touchmove',ev=>{
+    if(y0==null)return;
+    dy=ev.touches[0].clientY-y0;
+    if(dy<=0||(window.scrollY||0)>0){ind.style.setProperty('--py','0px');ind.classList.remove('show');return}
+    const p=Math.min(dy*0.5,90);
+    ind.classList.add('show');ind.style.setProperty('--py',p+'px');
+    const a=p>62;if(a!==armed){armed=a;ind.classList.toggle('armed',a);if(a)haptic()}
+    ind.querySelector('span').textContent=a?'Pusť pro obnovení':'Táhni pro obnovení';
+  },{passive:true});
+  window.addEventListener('touchend',async()=>{
+    if(y0==null)return;y0=null;
+    if(!armed){ind.classList.remove('show','armed');ind.style.setProperty('--py','0px');return}
+    busy=true;ind.classList.add('busy');ind.querySelector('span').textContent='Obnovuji…';
+    try{await refreshEverything()}catch(e){}
+    busy=false;armed=false;ind.classList.remove('show','armed','busy');ind.style.setProperty('--py','0px');
+  });
+}
+async function refreshEverything(){
+  let remote=null;
+  try{remote=await fetchRemoteVersion()}catch(e){}
+  if(remote!=null&&remote>Number(APP_VERSION)){setSyncStatus('busy','Aktualizuji…');await applySilentUpdate(setupSW._reg,remote);return}
+  pollInbox('force');
+  if(hasSyncCreds())await syncNow('pull');
+  refreshLists();
+  if(hasSyncCreds()&&navigator.onLine)flashUpdated();
+  else if(!hasSyncCreds())toast('Kompas zatím není propojený');
+}
+
+/* ---------- Offline indicator ---------- */
+function updateOnline(){
+  const b=$('offlineBanner');if(b)b.hidden=navigator.onLine!==false;
+  document.documentElement.classList.toggle('is-offline',navigator.onLine===false);
+}
+window.addEventListener('online',updateOnline);
+window.addEventListener('offline',updateOnline);
+
+/* ---------- Zero-config setup link ---------- */
+function b64urlJson(obj){return b64urlEncodeBytes(new TextEncoder().encode(JSON.stringify(obj)))}
+function b64urlJsonParse(s){return JSON.parse(new TextDecoder().decode(b64urlToBytes(s)))}
+function extractSetupPacked(raw){
+  const s=String(raw||'').trim();
+  const m=s.match(/[#&?]setup=([A-Za-z0-9_\-]+)/);
+  if(m)return m[1];
+  return '';
+}
+function decodeSetup(packed){
+  try{
+    const o=b64urlJsonParse(packed);
+    if(!o||typeof o!=='object')return null;
+    const k=String(o.k||'').trim(),t=String(o.t||'').trim();
+    if(normalizeInboxKey(k).length<8)return null;
+    if(t&&!looksLikeToken(t))return null;
+    return {k,t};
+  }catch(e){return null}
+}
+function buildSetupLink(){
+  if(!hasSyncCreds())return '';
+  return pairBaseUrl()+'#setup='+b64urlJson({v:1,k:getInboxKeyRaw(),t:getSyncToken()});
+}
+async function applySetup(s,source){
+  if(!s)return false;
+  setInboxKeyRaw(s.k);
+  if(s.t)setSyncToken(s.t);
+  requestPersist();
+  try{
+    const db=await idbOpen();db.close&&db.close();
+    await idbSet('den_inbox_key',getInboxKeyRaw());
+    if(getSyncToken())await idbSet('den_sync_token',getSyncToken());
+  }catch(e){}
+  try{sessionStorage.removeItem('kompas_welcome_skip')}catch(e){}
+  updatePairBanner();
+  if(!getSyncToken()){showWelcome('notoken');return true}
+  hideWelcome();
+  setSyncStatus('busy','Načítám…');
+  await syncNow('init');
+  refreshLists();
+  haptic();
+  if(isIOS()&&!isStandalonePwa()&&source==='link'){showWelcome('a2hs');return true}
+  toast('Hotovo, Kompas je propojený ✓');
+  return true;
+}
+window.addEventListener('hashchange',()=>{
+  const h=String(location.hash||'');
+  const sp=extractSetupPacked(h);
+  if(sp){history.replaceState(null,'',location.pathname+location.search);const s=decodeSetup(sp);if(s)applySetup(s,'link');else toast('Odkaz Kompas je neplatný');return}
+  if(extractPairPacked(h))handlePairLaunch();
+});
+async function handleSetupLaunch(){
+  if(!SETUP_RAW)return false;
+  const s=decodeSetup(SETUP_RAW);
+  if(!s){toast('Odkaz Kompas je neplatný');return false}
+  return applySetup(s,'link');
+}
+async function acceptPasted(raw){
+  raw=String(raw||'').trim();
+  if(!raw){toast('Schránka je prázdná – zkopíruj svůj odkaz Kompas');return false}
+  const sp=extractSetupPacked(raw);
+  if(sp){const s=decodeSetup(sp);if(!s){toast('Odkaz Kompas je neplatný');return false}return applySetup(s,'paste')}
+  const pp=extractPairPacked(raw);
+  if(pp){hideWelcome();openPairAccept('',pp);return true}
+  if(looksLikeToken(raw)){setSyncToken(raw);hideWelcome();updatePairBanner();if(hasSyncCreds())syncNow('manual');else showWelcome('nokey');return true}
+  toast('Tohle není odkaz Kompas');
+  return false;
+}
+async function pasteFromClipboard(fallbackEl){
+  try{
+    if(navigator.clipboard&&navigator.clipboard.readText){
+      const t=await navigator.clipboard.readText();
+      if(t&&t.trim())return acceptPasted(t);
+    }
+  }catch(e){}
+  if(fallbackEl){fallbackEl.hidden=false;const ta=fallbackEl.querySelector('textarea');if(ta)ta.focus()}
+  toast('Vlož odkaz do pole (podrž prst → Vložit)');
+  return false;
+}
+async function copyText(text,okMsg){
+  try{
+    if(navigator.clipboard&&navigator.clipboard.writeText){await navigator.clipboard.writeText(text);toast(okMsg||'Zkopírováno');haptic();return true}
+  }catch(e){}
+  try{
+    const ta=document.createElement('textarea');ta.value=text;ta.setAttribute('readonly','');ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();
+    const ok=document.execCommand('copy');ta.remove();if(ok){toast(okMsg||'Zkopírováno');return true}
+  }catch(e){}
+  toast('Kopírování se nepovedlo');return false;
+}
+const SHARE_ICO='<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 3v12M7.5 7.5L12 3l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 10.5H6.5A1.5 1.5 0 0 0 5 12v7.5A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V12a1.5 1.5 0 0 0-1.5-1.5H16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+function welcomeSkipped(){try{return sessionStorage.getItem('kompas_welcome_skip')==='1'}catch(e){return false}}
+function hideWelcome(){const w=$('welcome');if(w){w.hidden=true;document.body.classList.remove('welcome-on')}}
+function showWelcome(mode){
+  const w=$('welcome');if(!w)return;
+  const ios=isIOS(),standalone=isStandalonePwa();
+  mode=mode||(getInboxKey()&&!getSyncToken()?'notoken':(ios&&!standalone?'ios-safari':'paste'));
+  const pasteBlock=
+    '<button type="button" class="primary big" id="wPaste">Vložit</button>'+
+    '<div class="w-manual" id="wManual" hidden><label for="wText" class="lbl">Odkaz Kompas</label><textarea id="wText" rows="3" placeholder="https://…/den/#setup=…" autocomplete="off" spellcheck="false"></textarea><button type="button" class="secondary" id="wManualGo">Použít odkaz</button></div>';
+  let html='<div class="w-logo" aria-hidden="true"><img src="icon-192.png" alt="" width="72" height="72"></div>';
+  if(mode==='a2hs'){
+    html+='<h1 id="welcomeTitle">Propojeno ✓</h1><p class="w-lead">Data máš staženo. Teď si Kompas dej na plochu, ať se otvírá jako aplikace.</p>'+
+      '<ol class="w-steps">'+
+      '<li class="w-step big"><span class="w-n">1</span><div><b>Přidat na plochu</b><span>Ťukni dole na '+SHARE_ICO+' Sdílet a vyber <b>Přidat na plochu</b>.</span></div></li>'+
+      '<li class="w-step"><span class="w-n">2</span><div><b>Zkopíruj si odkaz</b><span>Ikona na ploše má vlastní paměť, proto jí odkaz jednou předáš.</span><button type="button" class="secondary" id="wCopy">Zkopírovat odkaz</button></div></li>'+
+      '<li class="w-step"><span class="w-n">3</span><div><b>Otevři Kompas z plochy a ťukni na Vložit</b><span>Pak už se vše ukládá a stahuje samo.</span></div></li>'+
+      '</ol><button type="button" class="link-btn" id="wClose">Pokračovat tady v Safari</button>';
+  }else if(mode==='ios-safari'){
+    html+='<h1 id="welcomeTitle">Vítej v Kompasu</h1>'+
+      '<ol class="w-steps">'+
+      '<li class="w-step big"><span class="w-n">1</span><div><b>Přidat na plochu</b><span>Ťukni dole na '+SHARE_ICO+' Sdílet a vyber <b>Přidat na plochu</b>.</span></div></li>'+
+      '<li class="w-step"><span class="w-n">2</span><div><b>Ťukni na svůj odkaz Kompas a pak Vložit</b><span>Odkaz máš od IS BOTa, nebo na zařízení, kde Kompas už běží: Nastavení → Přidat další zařízení. Podrž na něm prst → Kopírovat.</span></div></li>'+
+      '</ol>'+pasteBlock+'<button type="button" class="link-btn" id="wClose">Zatím bez propojení</button>';
+  }else if(mode==='notoken'){
+    html+='<h1 id="welcomeTitle">Ještě jeden krok</h1><p class="w-lead">Kód je uložený, ale chybí přístup k úložišti. Na zařízení, kde Kompas už běží, otevři <b>Nastavení → Přidat další zařízení → Zkopírovat odkaz</b> a tady ťukni na Vložit.</p>'+pasteBlock+
+      '<button type="button" class="link-btn" id="wPair">Mám QR kód a PIN z počítače</button><button type="button" class="link-btn" id="wClose">Zatím bez propojení</button>';
+  }else{
+    html+='<h1 id="welcomeTitle">Ťukni na svůj odkaz Kompas a pak Vložit</h1><p class="w-lead">Odkaz máš od IS BOTa, nebo na zařízení, kde Kompas už běží (Nastavení → Přidat další zařízení). Podrž na něm prst a dej Kopírovat. Pak se všechno nastaví samo.</p>'+pasteBlock+
+      '<button type="button" class="link-btn" id="wPair">Mám QR kód a PIN z počítače</button><button type="button" class="link-btn" id="wClose">Zatím bez propojení</button>';
+  }
+  w.querySelector('.w-inner').innerHTML=html;
+  w.hidden=false;document.body.classList.add('welcome-on');
+  const on=(id,fn)=>{const b=$(id);if(b)b.onclick=fn};
+  on('wPaste',()=>pasteFromClipboard($('wManual')));
+  on('wManualGo',()=>acceptPasted($('wText')&&$('wText').value));
+  on('wCopy',()=>{const l=buildSetupLink();if(l)copyText(l,'Odkaz je ve schránce – teď ho vlož v ikoně na ploše')});
+  on('wPair',()=>{hideWelcome();openPairAccept('','')});
+  on('wClose',()=>{try{sessionStorage.setItem('kompas_welcome_skip','1')}catch(e){}hideWelcome();if(!hasSyncCreds())setSyncStatus('warn','Nepropojeno')});
+  const t=$('welcomeTitle');if(t){t.setAttribute('tabindex','-1');setTimeout(()=>t.focus(),50)}
+}
+function maybeShowWelcome(){
+  if(hasSyncCreds()){hideWelcome();return}
+  if(welcomeSkipped())return;
+  showWelcome();
+}
+function openDeviceLink(){
+  const url=buildSetupLink();
+  if(!url){showWelcome();return}
+  sheetMode='device-link';sheetTarget=null;
+  $('sheetTitle').textContent='Přidat další zařízení';
+  $('sheetDelete').hidden=true;
+  if($('sheetSave')){$('sheetSave').hidden=false;$('sheetSave').textContent='Hotovo'}
+  $('sheetBody').innerHTML=
+    '<p class="muted">Na novém zařízení naskenuj QR kód, nebo mu pošli odkaz a otevři ho. Všechno se nastaví samo – žádné kódy ani tokeny.</p>'+
+    '<div class="pair-qr" id="devQr"></div>'+
+    '<button type="button" class="primary" id="devCopy">Zkopírovat odkaz</button>'+
+    (navigator.share?'<button type="button" class="secondary" id="devShare">Sdílet sobě…</button>':'')+
+    '<p class="muted small">Odkaz je jako klíč od tvých dat. Posílej ho jen sobě (třeba do Poznámek nebo AirDropem), nikomu jinému.</p>';
+  $('overlay').hidden=false;document.body.classList.add('locked');
+  renderQr(url,$('devQr'));
+  const c=$('devCopy');if(c)c.onclick=()=>copyText(url,'Odkaz je ve schránce');
+  const s=$('devShare');if(s)s.onclick=async()=>{try{await navigator.share({title:'Můj Kompas',url})}catch(e){}};
 }
 
 setupCompactHeader();
@@ -2746,7 +3190,7 @@ function flashUpdated(){
   clearTimeout(flashUpdated._t);
   flashUpdated._t=setTimeout(()=>{
     const el=$('syncStatus');
-    if(el&&el.textContent==='Aktualizováno')setSyncStatus('ok',syncCountText());
+    if(el&&el.textContent==='Aktualizováno')setSyncStatus('ok','Uloženo ✓');
   },2500);
 }
 async function fetchRemoteVersion(){
@@ -2914,12 +3358,16 @@ if($('backupFile'))$('backupFile').addEventListener('change',ev=>{
 });
 if($('timesheetPdf'))$('timesheetPdf').onclick=openTimesheetPrint;
 if($('timesheetCsv'))$('timesheetCsv').onclick=()=>{shareTimesheetCsv()};
-if($('pairBanner'))$('pairBanner').onclick=()=>openPairAccept('','');
+if($('pairBanner'))$('pairBanner').onclick=()=>showWelcome();
+updateOnline();
+setupPullToRefresh();
 const bootGate=(async()=>{
   requestPersist();
   await hydrateCreds();
+  const viaSetup=await handleSetupLaunch();
   await handlePairLaunch();
   updatePairBanner();
+  if(!viaSetup&&$('overlay').hidden)maybeShowWelcome();
 })();
 bootGate.then(()=>{syncReady=true;if(!setupSW._reg)onAppResume()}).catch(()=>{syncReady=true;onAppResume()});
 setupSW();

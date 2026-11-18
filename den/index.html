@@ -14,7 +14,7 @@
 <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<link rel="stylesheet" href="style.css?v=11.2.1">
+<link rel="stylesheet" href="style.css?v=12.0">
 </head>
 <body>
 <div id="appRoot">
@@ -31,9 +31,9 @@
     <button type="button" data-view="notes">Poznámky</button>
   </nav>
   <div class="sb-foot">
-    <button type="button" class="sb-sync" id="sbSync">Synchronizovat teď</button>
+    <div class="sb-syncline"><span id="sbSyncState" class="sync-status" aria-hidden="true"></span></div>
     <button type="button" class="sb-settings" id="sbSettings">Nastavení</button>
-    <div class="sb-ver" id="appSidebarVer">verze 11.2.1</div>
+    <div class="sb-ver" id="appSidebarVer">verze 12.0</div>
   </div>
 </aside>
 <div id="appMain">
@@ -42,14 +42,16 @@
     <h1 class="nav-title" id="navTitle">Kompas</h1>
     <div id="syncStatus" class="sync-status" aria-live="polite">Načítám…</div>
     <div class="top-actions">
-      <button type="button" class="ghost-btn" id="importBtn">Vložit</button>
-      <button type="button" class="ghost-btn" id="settingsBtn">Nastavení</button>
+      <button type="button" class="ghost-btn" id="importBtn" hidden>Vložit</button>
+      <button type="button" class="ghost-btn icon-btn" id="settingsBtn" aria-label="Nastavení"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></button>
     </div>
   </div>
-  <h1 class="large-title" id="largeTitle">Kompas <span class="ver" id="appVer">verze 11.2.1</span></h1>
+  <h1 class="large-title" id="largeTitle">Kompas <span class="ver" id="appVer">verze 12.0</span></h1>
 </header>
 <div id="storageWarn" class="banner warn" hidden>Paměť telefonu je plná. Data se nemusí uložit — udělej zálohu v Nastavení.</div>
-<div id="pairBanner" class="banner pair" hidden>Spáruj zařízení: na počítači Nastavení → Připojit další zařízení</div>
+<div id="offlineBanner" class="banner offline" role="status" hidden>Jsi offline – vše se uloží v telefonu a odešle samo, až bude signál.</div>
+<button type="button" id="pairBanner" class="banner pair" hidden>Kompas není propojený – ťukni sem a nastav ho jedním odkazem</button>
+<div id="ptr" class="ptr" aria-hidden="true"><i></i><span>Táhni pro obnovení</span></div>
 <div class="search-wrap">
   <label class="sr-only" for="searchQ">Hledat</label>
   <div class="search-ios">
@@ -132,8 +134,7 @@
 <main id="view-ukoly" hidden>
   <div id="deskToolbar">
     <button type="button" class="desk-btn" id="deskNew">Nový úkol</button>
-    <button type="button" class="desk-btn ghost" id="deskSync">Synchronizovat teď</button>
-    <button type="button" class="desk-btn ghost" id="deskPrint">Tisk</button>
+        <button type="button" class="desk-btn ghost" id="deskPrint">Tisk</button>
     <div id="bulkBar" hidden>
       <span id="bulkCount">0 vybraných</span>
       <button type="button" class="desk-btn" id="bulkDone">Hotovo</button>
@@ -160,7 +161,7 @@
     </table>
   </div>
   <p class="empty" id="taskEmpty" hidden></p>
-  <button type="button" class="fab" id="addTaskBtn" aria-label="Přidat úkol">+</button>
+  <button type="button" class="fab" id="addTaskBtn" aria-label="Přidat úkol" hidden>+</button>
 </main>
 
 <main id="view-dochazka" hidden>
@@ -223,6 +224,8 @@
   <p class="empty" id="noteEmpty" hidden>Zatím žádné poznámky.</p>
 </main>
 
+<button type="button" class="fab qfab" id="quickFab" aria-label="Rychle přidat úkol, připomínku nebo poznámku"><svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
+
 <nav class="tabbar" role="tablist" aria-label="Sekce">
   <button type="button" class="on" data-view="dnes"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M8 3.5v3M16 3.5v3M3.5 9h17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="12" cy="14.5" r="1.6" fill="currentColor"/></svg><span>Dnes</span></button>
   <button type="button" data-view="ukoly"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="3" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M8 12.2l2.3 2.3L16.2 8.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Úkoly</span></button>
@@ -259,10 +262,12 @@
   </div>
 </div>
 
+<div id="welcome" class="welcome" role="dialog" aria-modal="true" aria-labelledby="welcomeTitle" hidden><div class="w-inner"></div></div>
+
 <input type="file" id="backupFile" accept=".enc,.denbak,application/json" hidden>
 <div class="toast" id="toast" role="status"></div>
 </div><!-- /appRoot -->
-<script src="qr.js?v=11.2.1"></script>
-<script src="app.js?v=11.2.1"></script>
+<script src="qr.js?v=12.0"></script>
+<script src="app.js?v=12.0"></script>
 </body>
 </html>
