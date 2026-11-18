@@ -1,16 +1,18 @@
-const CACHE='den-v11.2';
-const FILES=['./','index.html','app.js','app.js?v=11.2','style.css','style.css?v=11.2','qr.js','qr.js?v=11.2','manifest.webmanifest','icon-180.png','icon-192.png','icon-512.png','icon-512-maskable.png','favicon.png','icon.svg','fonts/Geist-Variable.woff2'];
+const CACHE='den-v11.2.1';
+const FILES=['./','index.html','app.js','app.js?v=11.2.1','style.css','style.css?v=11.2.1','qr.js','qr.js?v=11.2.1','manifest.webmanifest','icon-180.png','icon-192.png','icon-512.png','icon-512-maskable.png','favicon.png','icon.svg','fonts/Geist-Variable.woff2'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(FILES)).then(()=>self.skipWaiting()))});
 self.addEventListener('activate',e=>{
   e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));
 });
 self.addEventListener('message',e=>{if(e.data&&e.data.type==='SKIP_WAITING')self.skipWaiting()});
-function isInbox(path){return /inbox\.enc$/.test(path)||/\.enc$/.test(path)}
+function isSameOrigin(url){try{return url.origin===self.location.origin}catch(e){return false}}
+function isInbox(path){return /inbox\.enc$/.test(path)}
 function isVersion(path){return /version\.json$/.test(path)}
 function isShell(path){return /\.(?:js|css|html)$/.test(path)||path.endsWith('/')||path.endsWith('sw.js')||path.endsWith('manifest.webmanifest')}
 self.addEventListener('fetch',e=>{
   if(e.request.method!=='GET')return;
   const url=new URL(e.request.url);
+  if(!isSameOrigin(url))return;
   const path=url.pathname;
   if(isInbox(path)||isVersion(path)){
     e.respondWith(fetch(new Request(e.request,{cache:'no-store'})));
