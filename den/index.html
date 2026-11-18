@@ -8,12 +8,12 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Den">
-<meta name="theme-color" content="#4a8019" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0b111b" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
 <link rel="icon" type="image/png" href="icon-192.png">
-<link rel="stylesheet" href="style.css?v=8">
+<link rel="stylesheet" href="style.css?v=9">
 <script>
 (function(){try{var L=JSON.parse(localStorage.getItem('den_lock')||'null');if(L&&L.on&&L.credId)document.documentElement.classList.add('app-locked');}catch(e){}})();
 </script>
@@ -36,17 +36,23 @@
     <p class="muted" id="lockHint"></p>
   </div>
 </div>
-<header class="top">
-  <h1>Den <span class="ver" id="appVer">verze 8</span></h1>
-  <div class="top-actions">
-    <button type="button" class="ghost-btn" id="importBtn">Vložit data</button>
-    <button type="button" class="ghost-btn" id="settingsBtn">Nastavení</button>
+<header class="top" id="topBar">
+  <div class="nav-bar">
+    <h1 class="nav-title" id="navTitle">Den</h1>
+    <div class="top-actions">
+      <button type="button" class="ghost-btn" id="importBtn">Vložit</button>
+      <button type="button" class="ghost-btn" id="settingsBtn">Nastavení</button>
+    </div>
   </div>
+  <h1 class="large-title" id="largeTitle">Den <span class="ver" id="appVer">verze 9</span></h1>
 </header>
 <div id="storageWarn" class="banner warn" hidden>Paměť telefonu je plná. Data se nemusí uložit — udělej zálohu v Nastavení.</div>
 <div class="search-wrap">
   <label class="sr-only" for="searchQ">Hledat</label>
-  <input type="search" id="searchQ" placeholder="Hledat v úkolech a poznámkách" enterkeyhint="search" autocomplete="off">
+  <div class="search-ios">
+    <svg class="search-icon" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10.2 10.2L14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+    <input type="search" id="searchQ" placeholder="Hledat" enterkeyhint="search" autocomplete="off">
+  </div>
 </div>
 <div id="searchResults" hidden></div>
 
@@ -103,7 +109,7 @@
     </div>
     <div class="chips" id="remChips"></div>
     <button type="button" class="secondary" id="remAdd">Přidat připomínku</button>
-    <div id="todayRems"></div>
+    <div id="todayRems" class="group"></div>
   </section>
 
   <section class="card">
@@ -113,7 +119,7 @@
   <section class="card" id="todayNotesCard">
     <h2 class="incard">Poznámky</h2>
     <p class="muted" id="todayNotesSum" style="margin:0 0 8px"></p>
-    <div id="todayNotesList"></div>
+    <div id="todayNotesList" class="group"></div>
     <button type="button" class="secondary" id="goNotes">Otevřít poznámky</button>
   </section>
 
@@ -127,7 +133,7 @@
   <div class="filters" id="taskFilters" role="group" aria-label="Kategorie"></div>
   <div id="taskList"></div>
   <p class="empty" id="taskEmpty" hidden></p>
-  <button type="button" class="fab" id="addTaskBtn">+ Přidat úkol</button>
+  <button type="button" class="fab" id="addTaskBtn" aria-label="Přidat úkol">+</button>
 </main>
 
 <main id="view-dochazka" hidden>
@@ -139,12 +145,12 @@
   <div class="metrics" id="monthMetrics"></div>
   <div class="card" id="monthWorkdays"></div>
   <h2>Odpracované dny</h2>
-  <div id="monthDays"></div>
+  <div id="monthDays" class="group"></div>
   <h2 id="monthExpTitle">Výdaje</h2>
-  <div id="monthExp"></div>
+  <div id="monthExp" class="group"></div>
   <h2>Příští faktura</h2>
   <div class="card" id="nextInvoice"></div>
-  <div class="actions" id="timesheetActions" style="margin:8px 16px 16px;padding:0">
+  <div class="actions" id="timesheetActions">
     <button type="button" class="secondary" id="timesheetPdf">Výkaz PDF</button>
     <button type="button" class="secondary" id="timesheetCsv">Výkaz CSV</button>
   </div>
@@ -162,9 +168,9 @@
     <button type="button" class="secondary" id="remAdd2">Přidat připomínku</button>
   </div>
   <h2>Nadcházející</h2>
-  <div id="remUpcoming"></div>
+  <div id="remUpcoming" class="group"></div>
   <h2>Hotovo</h2>
-  <div id="remDone"></div>
+  <div id="remDone" class="group"></div>
 </main>
 
 <main id="view-notes" hidden>
@@ -180,7 +186,7 @@
     <button type="button" class="secondary" id="noteCancelEdit" hidden>Zrušit úpravu</button>
   </div>
   <h2>Uložené</h2>
-  <div id="noteList"></div>
+  <div id="noteList" class="group"></div>
   <p class="empty" id="noteEmpty" hidden>Zatím žádné poznámky.</p>
 </main>
 
@@ -221,6 +227,6 @@
 
 <input type="file" id="backupFile" accept=".enc,.denbak,application/json" hidden>
 <div class="toast" id="toast" role="status"></div>
-<script src="app.js?v=8"></script>
+<script src="app.js?v=9"></script>
 </body>
 </html>
