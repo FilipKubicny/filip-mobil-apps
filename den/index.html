@@ -14,7 +14,7 @@
 <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<link rel="stylesheet" href="style.css?v=11.1">
+<link rel="stylesheet" href="style.css?v=11.2">
 </head>
 <body>
 <div id="appRoot">
@@ -33,22 +33,23 @@
   <div class="sb-foot">
     <button type="button" class="sb-sync" id="sbSync">Synchronizovat teď</button>
     <button type="button" class="sb-settings" id="sbSettings">Nastavení</button>
-    <div class="sb-ver">verze 11.1</div>
+    <div class="sb-ver">verze 11.2</div>
   </div>
 </aside>
 <div id="appMain">
 <header class="top" id="topBar">
   <div class="nav-bar">
     <h1 class="nav-title" id="navTitle">Kompas</h1>
-    <div id="syncStatus" class="sync-status" aria-live="polite">Jen v tomto zařízení</div>
+    <div id="syncStatus" class="sync-status" aria-live="polite">Načítám…</div>
     <div class="top-actions">
       <button type="button" class="ghost-btn" id="importBtn">Vložit</button>
       <button type="button" class="ghost-btn" id="settingsBtn">Nastavení</button>
     </div>
   </div>
-  <h1 class="large-title" id="largeTitle">Kompas <span class="ver" id="appVer">verze 11.1</span></h1>
+  <h1 class="large-title" id="largeTitle">Kompas <span class="ver" id="appVer">verze 11.2</span></h1>
 </header>
 <div id="storageWarn" class="banner warn" hidden>Paměť telefonu je plná. Data se nemusí uložit — udělej zálohu v Nastavení.</div>
+<div id="pairBanner" class="banner pair" hidden>Spáruj zařízení: na počítači Nastavení → Připojit další zařízení</div>
 <div class="search-wrap">
   <label class="sr-only" for="searchQ">Hledat</label>
   <div class="search-ios">
@@ -63,8 +64,8 @@
     <h2 class="incard">Jak začít</h2>
     <ol class="onboard-list">
       <li>Přidej Kompas na plochu (Sdílet → Na plochu).</li>
-      <li>V Nastavení zadej kód pro IS BOTa.</li>
-      <li>Uděláš zálohu v Nastavení, ať docházka i úkoly zůstanou i mimo telefon.</li>
+      <li>Na už nastaveném zařízení otevři Nastavení → Připojit další zařízení a tady vlož odkaz s kódem.</li>
+      <li>Pak se data stáhnou sama, kdykoli aplikaci otevřeš.</li>
     </ol>
     <button type="button" class="secondary" id="onboardOk">Rozumím</button>
   </section>
@@ -261,6 +262,7 @@
 <input type="file" id="backupFile" accept=".enc,.denbak,application/json" hidden>
 <div class="toast" id="toast" role="status"></div>
 </div><!-- /appRoot -->
-<script src="app.js?v=11.1"></script>
+<script src="qr.js?v=11.2"></script>
+<script src="app.js?v=11.2"></script>
 </body>
 </html>

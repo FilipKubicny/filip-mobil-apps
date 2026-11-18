@@ -20,7 +20,7 @@ const BUCKETS=[
 ];
 const STATUSES=[{id:'open',name:'Otevřené'},{id:'wip',name:'Rozpracované'},{id:'wait',name:'Čeká'},{id:'done',name:'Hotovo'}];
 const REPEATS=[{id:'',name:'Neopakuje se',short:'Neopakuje se'},{id:'daily',name:'Denně',short:'Denně'},{id:'weekly',name:'Týdně',short:'Týdně'},{id:'monthly',name:'Měsíčně',short:'Měsíčně'},{id:'workdays',name:'Pracovní dny',short:'Pracovní dny'}];
-const APP_VERSION=11.1,APP_NAME='Kompas';
+const APP_VERSION=11.2,APP_NAME='Kompas';
 try{localStorage.removeItem('den_lock')}catch(e){}
 try{localStorage.removeItem('den_pending_mails')}catch(e){}
 const CAT_REPAIR={'432daf02':'sva','7e50a6ef':'sva','97d85896':'sva','c47f2c69':'zam','59a4c2fe':'zam','b39cb988':'sva','727076df':'sva','83367aa7':'fre','6a18e6c6':'fre','79486842':'fre','83549cb7':'lin','3ef16c57':'ost','6443a152':'ost','738ca1f6':'fre','66c017e9':'zam','a1b882a7':'zam','249f1330':'zam','9c9d5258':'zam','354dbdf3':'zam','b9e025f0':'pul','4185f791':'pul','fbe7d7cd':'pul','aab0cba9':'sva','c6bfbc8d':'sva','4aeb6c08':'sva','a3d38c38':'sva','6e49be28':'ost','5b60e232':'ost','ee532219':'lin','deafdb98':'lin','527a770f':'inv','f19d2292':'inv','f2e4f1b8':'sva','875b1851':'fre','c0e70d5':'inv','802e913d':'ost'};
@@ -865,12 +865,14 @@ function openTaskSheet(task){
   $('overlay').hidden=false;document.body.classList.add('locked');
   setTimeout(()=>$('fText')&&$('fText').focus(),50);
 }
-function closeSheet(){$('overlay').hidden=true;if($('importOverlay').hidden)document.body.classList.remove('locked');sheetMode=null;sheetTarget=null;if($('sheetDelete'))$('sheetDelete').textContent='Smazat'}
+function closeSheet(){$('overlay').hidden=true;if($('importOverlay').hidden)document.body.classList.remove('locked');sheetMode=null;sheetTarget=null;if($('sheetDelete')){$('sheetDelete').hidden=true;$('sheetDelete').textContent='Smazat'}if($('sheetSave')){$('sheetSave').hidden=false;$('sheetSave').textContent='Uložit'}}
 $('addTaskBtn').onclick=()=>openTaskSheet(null);
 $('sheetCancel').onclick=closeSheet;
 $('overlay').addEventListener('click',e=>{if(e.target===$('overlay'))closeSheet()});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(!$('importOverlay').hidden)closeImportSheet();else if(!$('overlay').hidden)closeSheet()}});
 $('sheetSave').onclick=()=>{
+  if(sheetMode==='pair-accept'){submitPairAccept();return}
+  if(sheetMode==='pair-share'){closeSheet();return}
   if(sheetMode==='settings'){
     const b=$('sBilled').value,s=$('sSpecial').value,r=Number($('sRate').value);
     if(!b||!s||!isFinite(r)||r<0){toast('Zkontroluj nastavení');return}
@@ -878,7 +880,9 @@ $('sheetSave').onclick=()=>{
     const key=($('sInboxKey')&&$('sInboxKey').value)||'';
     setInboxKeyRaw(key);
     closeSheet();if(view==='dochazka')renderDochazka();updateTotal();toast('Nastavení uloženo');
+    updatePairBanner();
     pollInbox('force');
+    if(hasSyncCreds())syncNow('manual');
     return;
   }
   if(sheetMode==='cat-edit'){
@@ -1381,8 +1385,54 @@ function setInboxHint(s){
 }
 function normalizeInboxKey(s){return String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'')}
 function getInboxKeyRaw(){return String(load('den_inbox_key','')||'')}
-function setInboxKeyRaw(v){save('den_inbox_key',String(v||'').trim())}
+function setInboxKeyRaw(v){
+  const s=String(v||'').trim();
+  save('den_inbox_key',s);
+  idbSet('den_inbox_key',s);
+  requestPersist();
+}
 function getInboxKey(){return normalizeInboxKey(getInboxKeyRaw())}
+const CRED_DB='kompas-creds',CRED_STORE='kv';
+function idbOpen(){
+  return new Promise((resolve,reject)=>{
+    try{
+      const req=indexedDB.open(CRED_DB,1);
+      req.onupgradeneeded=()=>{try{req.result.createObjectStore(CRED_STORE)}catch(e){}};
+      req.onsuccess=()=>resolve(req.result);
+      req.onerror=()=>reject(req.error||new Error('idb'));
+    }catch(e){reject(e)}
+  });
+}
+async function idbSet(k,v){
+  try{
+    const db=await idbOpen();
+    await new Promise((resolve,reject)=>{
+      const tx=db.transaction(CRED_STORE,'readwrite');
+      tx.objectStore(CRED_STORE).put(v,k);
+      tx.oncomplete=()=>resolve();
+      tx.onerror=()=>reject(tx.error);
+    });
+  }catch(e){}
+}
+async function idbGet(k){
+  try{
+    const db=await idbOpen();
+    return await new Promise((resolve,reject)=>{
+      const tx=db.transaction(CRED_STORE,'readonly');
+      const r=tx.objectStore(CRED_STORE).get(k);
+      r.onsuccess=()=>resolve(r.result);
+      r.onerror=()=>reject(r.error);
+    });
+  }catch(e){return undefined}
+}
+function requestPersist(){
+  try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){}
+}
+function hasSyncCreds(){return !!(getSyncToken()&&getInboxKey())}
+function updatePairBanner(){
+  const el=$('pairBanner');if(!el)return;
+  el.hidden=hasSyncCreds();
+}
 function loadAppliedInbox(){const a=load('den_inbox_applied',[]);return Array.isArray(a)?a:[]}
 function saveAppliedInbox(ids){save('den_inbox_applied',ids.slice(-400))}
 function b64toBytes(s){
@@ -1637,9 +1687,11 @@ function openSettings(){
     '<div class="field"><label for="sRate">Hodinovka v Kč</label><input type="number" id="sRate" min="0" step="1" value="'+esc(settings.rate)+'"></div>'+
     '<div class="field"><label for="sInboxKey">Kód pro IS BOTa</label><input type="text" id="sInboxKey" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX" value="'+esc(getInboxKeyRaw())+'"></div>'+
     (inboxHint?'<p class="muted" id="inboxHintLine">'+esc(inboxHint)+'</p>':'')+
-    '<div class="field"><span class="lbl">Synchronizace</span><div class="muted">Změny se ukládají samy do soukromého úložiště. Na každém zařízení jednou vlož token úložiště (jen k repozitáři den-data) a stejný kód pro IS BOTa.</div></div>'+
+    '<div class="field"><span class="lbl">Synchronizace</span><div class="muted">Změny se ukládají samy. Nové zařízení připojíš tlačítkem Připojit další zařízení — naskenuješ QR kód a zadáš šestimístný kód.</div></div>'+
     '<div class="field"><label for="sSyncToken">Token úložiště</label><input type="password" id="sSyncToken" autocomplete="off" spellcheck="false" placeholder="github_pat_… nebo ponech prázdné, pokud už je uložený"></div>'+
     '<button type="button" class="primary" id="syncNowBtn">Synchronizovat teď</button>'+
+    '<button type="button" class="secondary" id="pairShareBtn">Připojit další zařízení</button>'+
+    '<button type="button" class="secondary" id="pairAcceptBtn">Vložit párovací odkaz</button>'+
     '<div class="field"><span class="lbl">Kategorie</span><div class="cat-admin" id="catAdmin"></div></div>'+
     '<div class="field"><span class="lbl">Záloha</span><div class="muted">Šifrovaná stejným kódem jako inbox. Zálohu stáhneš nebo nasdílíš zde, kdykoli potřebuješ.</div></div>'+
     '<button type="button" class="secondary" id="backupExport">Stáhnout / sdílet zálohu</button>'+
@@ -1651,6 +1703,8 @@ function openSettings(){
   const be=$('backupExport');if(be)be.onclick=()=>exportBackup();
   const bi=$('backupImport');if(bi)bi.onclick=()=>{const f=$('backupFile');if(f)f.click()};
   const sn=$('syncNowBtn');if(sn)sn.onclick=()=>{const tok=$('sSyncToken')&&$('sSyncToken').value.trim();if(tok)setSyncToken(tok);closeSheet();syncNow('manual')};
+  const ps=$('pairShareBtn');if(ps)ps.onclick=()=>openPairShare();
+  const pa=$('pairAcceptBtn');if(pa)pa.onclick=()=>openPairAccept('','');
   renderCatAdmin();
 }
 function renderCatAdmin(){
@@ -1826,6 +1880,8 @@ async function startPasteImport(){
   let text='';
   try{if(navigator.clipboard&&navigator.clipboard.readText)text=(await navigator.clipboard.readText())||''}catch(e){}
   text=String(text).trim();
+  const packed=extractPairPacked(text);
+  if(packed){openPairAccept(text,packed);return}
   if(text){
     try{const b=parseImportedBundle(text);if(importSummary(b).length&&applyImported(b))return}catch(e){}
   }
@@ -1837,6 +1893,8 @@ $('importOverlay').addEventListener('click',e=>{if(e.target===$('importOverlay')
 $('importGo').onclick=()=>{
   const text=$('importText').value.trim();
   if(!text){toast('Vlož odkaz nebo kód');return}
+  const packed=extractPairPacked(text);
+  if(packed){closeImportSheet();openPairAccept(text,packed);return}
   let b;try{b=parseImportedBundle(text)}catch(e){toast('Import se nepovedl');return}
   if(applyImported(b))closeImportSheet();
 };
@@ -2058,7 +2116,187 @@ function mergeRemoteState(data){
 }
 const SYNC_OWNER='FilipKubicny',SYNC_REPO='den-data',SYNC_PATH='state.enc';
 function getSyncToken(){return String(load('den_sync_token','')||'').trim()}
-function setSyncToken(v){save('den_sync_token',String(v||'').trim())}
+function setSyncToken(v){
+  const s=String(v||'').trim();
+  save('den_sync_token',s);
+  idbSet('den_sync_token',s);
+  requestPersist();
+}
+async function hydrateCreds(){
+  requestPersist();
+  if(!getSyncToken()){
+    const tok=await idbGet('den_sync_token');
+    if(tok)save('den_sync_token',String(tok).trim());
+  }else idbSet('den_sync_token',getSyncToken());
+  if(!getInboxKeyRaw()){
+    const key=await idbGet('den_inbox_key');
+    if(key)save('den_inbox_key',String(key).trim());
+  }else idbSet('den_inbox_key',getInboxKeyRaw());
+  updatePairBanner();
+}
+
+const PAIR_TTL=30*60*1000;
+function b64urlEncodeBytes(u){
+  return bytesToB64(u).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function b64urlToBytes(s){
+  s=String(s||'').replace(/-/g,'+').replace(/_/g,'/');
+  while(s.length%4)s+='=';
+  return b64toBytes(s);
+}
+function randomPin(){
+  const n=crypto.getRandomValues(new Uint32Array(1))[0]%1000000;
+  return String(n).padStart(6,'0');
+}
+function pairBaseUrl(){
+  return location.origin+location.pathname.replace(/index\.html$/,'');
+}
+function extractPairPacked(raw){
+  const s=String(raw||'').trim();
+  let m=s.match(/#pair=([A-Za-z0-9._\-]+)/);
+  if(m)return m[1];
+  m=s.match(/(?:^|[?&])pair=([A-Za-z0-9._\-]+)/);
+  if(m)return m[1];
+  if(/^v1\.[A-Za-z0-9._\-]+$/.test(s))return s;
+  return '';
+}
+async function derivePinKey(pin,salt,usage){
+  const enc=new TextEncoder();
+  const material=await crypto.subtle.importKey('raw',enc.encode(String(pin)),'PBKDF2',false,['deriveKey']);
+  return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:100000,hash:'SHA-256'},material,{name:'AES-GCM',length:256},false,[usage]);
+}
+async function encryptPairPayload(pin,obj){
+  const salt=crypto.getRandomValues(new Uint8Array(16));
+  const iv=crypto.getRandomValues(new Uint8Array(12));
+  const key=await derivePinKey(pin,salt,'encrypt');
+  const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,new TextEncoder().encode(JSON.stringify(obj)));
+  return 'v1.'+b64urlEncodeBytes(salt)+'.'+b64urlEncodeBytes(iv)+'.'+b64urlEncodeBytes(new Uint8Array(ct));
+}
+async function decryptPairPayload(pin,packed){
+  const parts=String(packed||'').split('.');
+  if(parts[0]!=='v1'||parts.length!==4)throw new Error('format');
+  const salt=b64urlToBytes(parts[1]),iv=b64urlToBytes(parts[2]),ct=b64urlToBytes(parts[3]);
+  const key=await derivePinKey(pin,salt,'decrypt');
+  const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv},key,ct);
+  return JSON.parse(new TextDecoder().decode(pt));
+}
+function isStandalonePwa(){
+  try{
+    if(window.navigator.standalone)return true;
+    if(window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches)return true;
+  }catch(e){}
+  return false;
+}
+async function applyPairedCreds(token,pass){
+  token=String(token||'').trim();
+  pass=String(pass||'').trim();
+  if(!token||!pass)throw new Error('empty');
+  setSyncToken(token);
+  setInboxKeyRaw(pass);
+  try{sessionStorage.removeItem('den_pair_pending')}catch(e){}
+  updatePairBanner();
+  setSyncStatus('busy','Načítám…');
+  await syncNow('init');
+  if(isStandalonePwa())toast('Zařízení je spárované');
+  else toast('V Safari je to uložené. V ikoně na ploše otevři Nastavení → Vložit párovací odkaz');
+}
+function renderQr(text,el){
+  if(!el)return;
+  el.innerHTML='';
+  try{
+    if(typeof qrcode!=='function')throw new Error('no qr');
+    const qr=qrcode(0,'M');
+    qr.addData(text,'Byte');
+    qr.make();
+    el.innerHTML=qr.createSvgTag(4,2);
+    const svg=el.querySelector('svg');
+    if(svg){
+      const w=svg.getAttribute('width'),h=svg.getAttribute('height');
+      if(!svg.getAttribute('viewBox')&&w&&h)svg.setAttribute('viewBox','0 0 '+parseInt(w,10)+' '+parseInt(h,10));
+      svg.removeAttribute('width');svg.removeAttribute('height');
+      svg.style.display='block';svg.style.width='100%';svg.style.height='auto';
+    }
+  }catch(e){
+    el.innerHTML='<p class="muted">QR se nepodařilo vytvořit. Použij odkaz níže.</p>';
+  }
+}
+async function openPairShare(){
+  if(!hasSyncCreds()){toast('Nejdřív ulož token a kód pro IS BOTa');return}
+  const pin=randomPin();
+  const packed=await encryptPairPayload(pin,{t:getSyncToken(),k:getInboxKeyRaw(),exp:Date.now()+PAIR_TTL});
+  const url=pairBaseUrl()+'#pair='+packed;
+  sheetMode='pair-share';sheetTarget=null;
+  $('sheetTitle').textContent='Připojit další zařízení';
+  $('sheetDelete').hidden=true;
+  if($('sheetSave'))$('sheetSave').hidden=true;
+  $('sheetBody').innerHTML=
+    '<p class="muted">Na druhém zařízení naskenuj QR kód nebo otevři odkaz a zadej tento kód. Odkaz platí 30 minut a nesdílej ho.</p>'+
+    '<div class="pair-pin" id="pairPinShow">'+esc(pin)+'</div>'+
+    '<p class="pair-pin-label">Kód pro druhé zařízení</p>'+
+    '<div class="pair-qr" id="pairQr"></div>'+
+    '<div class="field"><label for="pairLink">Odkaz</label><textarea id="pairLink" rows="3" readonly></textarea></div>'+
+    '<button type="button" class="secondary" id="pairCopy">Kopírovat odkaz</button>';
+  $('overlay').hidden=false;document.body.classList.add('locked');
+  const ta=$('pairLink');if(ta)ta.value=url;
+  renderQr(url,$('pairQr'));
+  const cp=$('pairCopy');
+  if(cp)cp.onclick=async()=>{
+    try{
+      if(navigator.clipboard&&navigator.clipboard.writeText)await navigator.clipboard.writeText(url);
+      else{ta.focus();ta.select();document.execCommand('copy')}
+      toast('Odkaz je ve schránce');
+    }catch(e){toast('Odkaz zkopíruj ručně')}
+  };
+}
+function openPairAccept(prefill,packed){
+  packed=packed||extractPairPacked(prefill||'')||'';
+  try{if(packed)sessionStorage.setItem('den_pair_pending',packed)}catch(e){}
+  sheetMode='pair-accept';sheetTarget=packed||null;
+  $('sheetTitle').textContent='Spárovat zařízení';
+  $('sheetDelete').hidden=true;
+  if($('sheetSave')){$('sheetSave').hidden=false;$('sheetSave').textContent='Připojit'}
+  $('sheetBody').innerHTML=
+    '<p class="muted">Vlož odkaz z počítače (Nastavení → Připojit další zařízení) a šestimístný kód, který se tam ukázal.</p>'+
+    '<div class="field"><label for="pairInLink">Odkaz</label><textarea id="pairInLink" rows="3" placeholder="https://…#pair=…"></textarea></div>'+
+    '<div class="field"><label for="pairInPin">Šestimístný kód</label><input type="text" id="pairInPin" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]*" placeholder="000000"></div>';
+  $('overlay').hidden=false;document.body.classList.add('locked');
+  if($('pairInLink')){
+    if(prefill)$('pairInLink').value=prefill;
+    else if(packed)$('pairInLink').value=pairBaseUrl()+'#pair='+packed;
+  }
+  setTimeout(()=>{
+    const pin=$('pairInPin'),link=$('pairInLink');
+    if(link&&!String(link.value||'').trim())link.focus();
+    else if(pin)pin.focus();
+  },50);
+}
+async function submitPairAccept(){
+  const raw=(($('pairInLink')&&$('pairInLink').value)||'').trim();
+  const pin=(($('pairInPin')&&$('pairInPin').value)||'').replace(/\D/g,'');
+  const packed=extractPairPacked(raw)||sheetTarget||'';
+  if(!packed){toast('Vlož párovací odkaz');return}
+  if(pin.length!==6){toast('Zadej šestimístný kód');return}
+  try{
+    const data=await decryptPairPayload(pin,packed);
+    if(!data||!data.t||!data.k){toast('Odkaz je neplatný');return}
+    if(data.exp&&Date.now()>Number(data.exp)){toast('Odkaz už neplatí, na počítači vytvoř nový');return}
+    history.replaceState(null,'',location.pathname+location.search);
+    closeSheet();
+    await applyPairedCreds(data.t,data.k);
+  }catch(e){
+    toast('Špatný kód nebo odkaz, zkus znovu');
+  }
+}
+async function handlePairLaunch(){
+  let packed=extractPairPacked(location.hash)||extractPairPacked(location.href);
+  if(!packed){
+    try{packed=sessionStorage.getItem('den_pair_pending')||''}catch(e){packed=''}
+  }
+  if(!packed)return;
+  history.replaceState(null,'',location.pathname+location.search);
+  openPairAccept('',packed);
+}
+
 function setSyncStatus(kind,text){
   const el=$('syncStatus');if(!el)return;
   el.className='sync-status'+(kind?(' '+kind):'');
@@ -2131,7 +2369,7 @@ function rememberRemote(data,sha){
 }
 async function pullAndMerge(){
   const key=getInboxKey();
-  if(!getSyncToken()){setSyncStatus('','Jen v tomto zařízení');return 0}
+  if(!getSyncToken()){updatePairBanner();setSyncStatus('warn','Není spárované');return 0}
   if(!key){setSyncStatus('warn','Doplň kód pro IS BOTa');return 0}
   const got=await githubGetState();
   if(got.missing){syncRemoteHash=null;syncRemoteAt=null;return 0}
@@ -2188,7 +2426,7 @@ async function pushMerged(){
 function renderPendingMail(){}
 function scheduleSync(){
   if(!syncReady||syncApplying)return;
-  if(!getSyncToken()){setSyncStatus('','Jen v tomto zařízení');return}
+  if(!getSyncToken()){updatePairBanner();setSyncStatus('warn','Není spárované');return}
   if(!navigator.onLine){setSyncStatus('warn','Offline – uloží se později')}
   else setSyncStatus('busy','Ukládám…');
   clearTimeout(syncTimer);
@@ -2196,7 +2434,7 @@ function scheduleSync(){
 }
 async function syncNow(reason){
   if(syncBusy)return;
-  if(!getSyncToken()){setSyncStatus('','Jen v tomto zařízení');return}
+  if(!getSyncToken()){updatePairBanner();setSyncStatus('warn','Není spárované');return}
   syncBusy=true;
   try{
     setSyncStatus('busy',(reason==='pull'||reason==='init')?'Načítám…':'Ukládám…');
@@ -2204,7 +2442,7 @@ async function syncNow(reason){
     syncTodayFormFromState();
     if(changed)refreshLists();
     await pushMerged();
-    if(changed&&reason!=='auto'&&reason!=='init')toast('Data sladěna');
+    if(changed&&reason!=='auto'&&reason!=='init'&&reason!=='resume'&&reason!=='visible'&&reason!=='focus'&&reason!=='pageshow')toast('Data sladěna');
   }catch(e){
     if(!navigator.onLine)setSyncStatus('warn','Offline – uloží se později');
     else if(e&&e.code==='auth')setSyncStatus('err','Token úložiště neplatí');
@@ -2345,34 +2583,96 @@ bindDesktopUi();
 bindShortcuts();
 document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState==='hidden'){saveNoteDraft();stopDictation()}
-  else{pollInbox('visible');pollState('visible')}
 });
-window.addEventListener('focus',()=>{if(uiReady&&!document.hidden){pollInbox('focus');pollState('focus')}});
 setInterval(()=>{if(!document.hidden&&uiReady)pollInbox('timer')},5*60*1000);
 setInterval(()=>{if(!document.hidden&&uiReady)syncNow('pull')},90*1000);
-window.addEventListener('online',()=>{if(uiReady)syncNow('online')});
+window.addEventListener('online',()=>{if(uiReady)syncNow('online').then(()=>{if(hasSyncCreds())flashUpdated()})});
 window.addEventListener('offline',()=>setSyncStatus('warn','Offline – uloží se později'));
-(function firstSync(){syncNow('init').finally(()=>{syncReady=true})})();
+function flashUpdated(){
+  if(!hasSyncCreds())return;
+  setSyncStatus('ok','Aktualizováno');
+  clearTimeout(flashUpdated._t);
+  flashUpdated._t=setTimeout(()=>{
+    const el=$('syncStatus');
+    if(el&&el.textContent==='Aktualizováno')setSyncStatus('ok','Uloženo ✓');
+  },2500);
+}
+async function fetchRemoteVersion(){
+  const r=await fetch('version.json?t='+Date.now(),{cache:'no-store',headers:{'Cache-Control':'no-cache','Pragma':'no-cache'}});
+  if(!r.ok)return null;
+  const j=await r.json();
+  const v=Number(j.version);
+  return isFinite(v)?v:null;
+}
+async function applySilentUpdate(reg,remote){
+  try{
+    if(reg){
+      if(reg.waiting)reg.waiting.postMessage({type:'SKIP_WAITING'});
+      await reg.update();
+      if(reg.waiting)reg.waiting.postMessage({type:'SKIP_WAITING'});
+    }
+  }catch(e){}
+  await new Promise(r=>setTimeout(r,1800));
+  if(setupSW._reloading)return true;
+  setupSW._reloading=true;
+  try{
+    const regs=await navigator.serviceWorker.getRegistrations();
+    await Promise.all(regs.map(x=>x.unregister()));
+    if(window.caches){const ks=await caches.keys();await Promise.all(ks.map(k=>caches.delete(k)))}
+  }catch(e){}
+  const u=new URL(location.href);
+  u.searchParams.set('v',String(remote));
+  location.replace(u.pathname+u.search);
+  return true;
+}
+async function afterResumePull(){
+  await bootGate;
+  pollInbox('resume');
+  await syncNow('resume');
+  if(hasSyncCreds()&&navigator.onLine)flashUpdated();
+}
+function onAppResume(){
+  if(document.visibilityState==='hidden')return;
+  const now=Date.now();
+  if(onAppResume._busy)return;
+  if(onAppResume._at&&now-onAppResume._at<1000)return;
+  onAppResume._at=now;
+  onAppResume._busy=true;
+  (async()=>{
+    await bootGate;
+    let remote=null;
+    try{remote=await fetchRemoteVersion()}catch(e){}
+    const newer=remote!=null&&remote>Number(APP_VERSION);
+    const reg=setupSW._reg;
+    if(newer){
+      setSyncStatus('busy','Aktualizuji…');
+      await applySilentUpdate(reg,remote);
+      return;
+    }
+    if(reg){try{await reg.update()}catch(e){}}
+    await afterResumePull();
+  })().catch(()=>afterResumePull()).finally(()=>{onAppResume._busy=false});
+}
 function setupSW(){
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')onAppResume()});
+  window.addEventListener('focus',onAppResume);
+  window.addEventListener('pageshow',onAppResume);
   if(!('serviceWorker' in navigator))return;
   navigator.serviceWorker.addEventListener('message',ev=>{
     if(!ev.data||ev.data.type!=='sw-update')return;
-    if(sessionStorage.getItem('den_sw_bg')==='1')return;
-    sessionStorage.setItem('den_sw_bg','1');
+    if(setupSW._reloading)return;
+    setupSW._reloading=true;
     location.reload();
   });
-  if(navigator.serviceWorker.controller){
-    navigator.serviceWorker.addEventListener('controllerchange',()=>{
-      if(setupSW._reloading)return;setupSW._reloading=true;location.reload();
-    });
-  }
-  const ping=reg=>{try{reg.update()}catch(e){}};
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{
+    if(setupSW._reloading)return;
+    setupSW._reloading=true;
+    location.reload();
+  });
   navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(reg=>{
-    ping(reg);
-    document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')ping(reg)});
-    window.addEventListener('focus',()=>ping(reg));
-    window.addEventListener('pageshow',()=>ping(reg));
-  }).catch(()=>{});
+    setupSW._reg=reg;
+    onAppResume();
+  }).catch(()=>{onAppResume()});
 }
 function hay(s){return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')}
 function renderSearch(){
@@ -2453,9 +2753,6 @@ async function shareTimesheetCsv(){
   const r=await shareOrDownload(blob,name,'Výkaz SAPEKOR');
   if(r!=='abort')toast(r==='share'?'Výkaz je v nabídce Sdílet':'Výkaz CSV je stažený');
 }
-function requestPersist(){
-  try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){}
-}
 if($('searchQ')){
   $('searchQ').addEventListener('input',renderSearch);
   $('searchQ').addEventListener('search',renderSearch);
@@ -2465,6 +2762,13 @@ if($('backupFile'))$('backupFile').addEventListener('change',ev=>{
 });
 if($('timesheetPdf'))$('timesheetPdf').onclick=openTimesheetPrint;
 if($('timesheetCsv'))$('timesheetCsv').onclick=()=>{shareTimesheetCsv()};
-requestPersist();
+if($('pairBanner'))$('pairBanner').onclick=()=>openPairAccept('','');
+const bootGate=(async()=>{
+  requestPersist();
+  await hydrateCreds();
+  await handlePairLaunch();
+  updatePairBanner();
+})();
+bootGate.then(()=>{syncReady=true;if(!setupSW._reg)onAppResume()}).catch(()=>{syncReady=true;onAppResume()});
 setupSW();
 })();
