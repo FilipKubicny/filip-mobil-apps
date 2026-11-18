@@ -13,18 +13,33 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
 <link rel="icon" type="image/png" href="icon-192.png">
-<link rel="stylesheet" href="style.css?v=6">
+<link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
 <header class="top">
-  <h1>Den <span class="ver" id="appVer">verze 6</span></h1>
+  <h1>Den <span class="ver" id="appVer">verze 7</span></h1>
   <div class="top-actions">
     <button type="button" class="ghost-btn" id="importBtn">Vložit data</button>
     <button type="button" class="ghost-btn" id="settingsBtn">Nastavení</button>
   </div>
 </header>
+<div id="storageWarn" class="banner warn" hidden>Paměť telefonu je plná. Data se nemusí uložit — udělej zálohu v Nastavení.</div>
+<div class="search-wrap">
+  <label class="sr-only" for="searchQ">Hledat</label>
+  <input type="search" id="searchQ" placeholder="Hledat v úkolech a poznámkách" enterkeyhint="search" autocomplete="off">
+</div>
+<div id="searchResults" hidden></div>
 
 <main id="view-dnes">
+  <section class="card onboard" id="onboardCard" hidden>
+    <h2 class="incard">Jak začít</h2>
+    <ol class="onboard-list">
+      <li>Přidej Den na plochu (Sdílet → Na plochu).</li>
+      <li>V Nastavení zadej kód pro IS BOTa.</li>
+      <li>Uděláš zálohu v Nastavení, ať docházka i úkoly zůstanou i mimo telefon.</li>
+    </ol>
+    <button type="button" class="secondary" id="onboardOk">Rozumím</button>
+  </section>
   <p class="today-label" id="todayLabel"></p>
 
   <section class="card">
@@ -109,6 +124,10 @@
   <div id="monthExp"></div>
   <h2>Příští faktura</h2>
   <div class="card" id="nextInvoice"></div>
+  <div class="actions" id="timesheetActions" style="margin:8px 16px 16px;padding:0">
+    <button type="button" class="secondary" id="timesheetPdf">Výkaz PDF</button>
+    <button type="button" class="secondary" id="timesheetCsv">Výkaz CSV</button>
+  </div>
   <h2>Vyfakturováno</h2>
   <div id="pastInvoices"></div>
 </main>
@@ -180,7 +199,8 @@
   </div>
 </div>
 
+<input type="file" id="backupFile" accept=".enc,.denbak,application/json" hidden>
 <div class="toast" id="toast" role="status"></div>
-<script src="app.js?v=6"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>
