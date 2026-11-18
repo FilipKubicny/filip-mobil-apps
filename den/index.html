@@ -8,34 +8,34 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Den">
-<meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f4f5f6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#131313" media="(prefers-color-scheme: dark)">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
 <link rel="icon" type="image/png" href="icon-192.png">
-<link rel="stylesheet" href="style.css?v=9">
-<script>
-(function(){try{var L=JSON.parse(localStorage.getItem('den_lock')||'null');if(L&&L.on&&L.credId)document.documentElement.classList.add('app-locked');}catch(e){}})();
-</script>
+<link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
-<div id="privacyCover" aria-hidden="true"></div>
-<div id="lockScreen" hidden>
-  <div class="lock-card">
-    <h1>Den je zamčený</h1>
-    <p>Odemkni Face ID, nebo kód telefonu, který iPhone nabídne.</p>
-    <button type="button" class="primary" id="lockUnlock">Odemknout Face ID</button>
-    <button type="button" class="secondary" id="lockEmergencyBtn">Odemknout kódem pro IS BOTa</button>
-    <div id="lockEmergency" hidden>
-      <div class="field">
-        <label for="lockCode">Kód pro IS BOTa</label>
-        <input type="text" id="lockCode" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX">
-      </div>
-      <button type="button" class="primary" id="lockCodeGo">Odemknout kódem</button>
-    </div>
-    <p class="muted" id="lockHint"></p>
+<div id="appRoot">
+<aside id="appSidebar" aria-label="Navigace">
+  <div class="sb-brand">
+    <div class="sb-logo">SAPEKOR</div>
+    <div class="sb-app">Den</div>
   </div>
-</div>
+  <nav class="sb-nav" role="tablist">
+    <button type="button" class="on" data-view="dnes">Dnes</button>
+    <button type="button" data-view="ukoly">Úkoly</button>
+    <button type="button" data-view="dochazka">Docházka</button>
+    <button type="button" data-view="rems">Připomínky</button>
+    <button type="button" data-view="notes">Poznámky</button>
+  </nav>
+  <div class="sb-foot">
+    <button type="button" class="sb-sync" id="sbSync">Synchronizovat</button>
+    <button type="button" class="sb-settings" id="sbSettings">Nastavení</button>
+    <div class="sb-ver">verze 10</div>
+  </div>
+</aside>
+<div id="appMain">
 <header class="top" id="topBar">
   <div class="nav-bar">
     <h1 class="nav-title" id="navTitle">Den</h1>
@@ -44,7 +44,7 @@
       <button type="button" class="ghost-btn" id="settingsBtn">Nastavení</button>
     </div>
   </div>
-  <h1 class="large-title" id="largeTitle">Den <span class="ver" id="appVer">verze 9</span></h1>
+  <h1 class="large-title" id="largeTitle">Den <span class="ver" id="appVer">verze 10</span></h1>
 </header>
 <div id="storageWarn" class="banner warn" hidden>Paměť telefonu je plná. Data se nemusí uložit — udělej zálohu v Nastavení.</div>
 <div class="search-wrap">
@@ -129,9 +129,35 @@
 </main>
 
 <main id="view-ukoly" hidden>
+  <div id="deskToolbar">
+    <button type="button" class="desk-btn" id="deskNew">Nový úkol</button>
+    <button type="button" class="desk-btn ghost" id="deskSync">Synchronizovat</button>
+    <button type="button" class="desk-btn ghost" id="deskPrint">Tisk</button>
+    <div id="bulkBar" hidden>
+      <span id="bulkCount">0 vybraných</span>
+      <button type="button" class="desk-btn" id="bulkDone">Hotovo</button>
+      <button type="button" class="desk-btn ghost" id="bulkDelete">Smazat</button>
+    </div>
+  </div>
   <nav class="tabs" id="taskTabs" role="tablist" aria-label="Období"></nav>
   <div class="filters" id="taskFilters" role="group" aria-label="Kategorie"></div>
   <div id="taskList"></div>
+  <div id="taskTableWrap">
+    <table id="taskTable">
+      <thead>
+        <tr>
+          <th class="col-check"><input type="checkbox" id="selAll" aria-label="Vybrat vše"></th>
+          <th>Úkol</th>
+          <th>Kategorie</th>
+          <th>Období</th>
+          <th>Termín</th>
+          <th>Stav</th>
+          <th>Poznámka</th>
+        </tr>
+      </thead>
+      <tbody id="taskTableBody"></tbody>
+    </table>
+  </div>
   <p class="empty" id="taskEmpty" hidden></p>
   <button type="button" class="fab" id="addTaskBtn" aria-label="Přidat úkol">+</button>
 </main>
@@ -198,6 +224,7 @@
   <button type="button" data-view="notes">Poznámky</button>
 </nav>
 
+</div><!-- /appMain -->
 <div class="overlay" id="overlay" hidden>
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
     <div class="sheet-handle"></div>
@@ -227,6 +254,7 @@
 
 <input type="file" id="backupFile" accept=".enc,.denbak,application/json" hidden>
 <div class="toast" id="toast" role="status"></div>
-<script src="app.js?v=9"></script>
+</div><!-- /appRoot -->
+<script src="app.js?v=10"></script>
 </body>
 </html>
