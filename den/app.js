@@ -21,12 +21,18 @@ const BUCKETS=[
 ];
 const STATUSES=[{id:'open',name:'Otevřené'},{id:'wip',name:'Rozpracované'},{id:'wait',name:'Čeká'},{id:'done',name:'Hotovo'}];
 const REPEATS=[{id:'',name:'Neopakuje se',short:'Neopakuje se'},{id:'daily',name:'Denně',short:'Denně'},{id:'weekly',name:'Týdně',short:'Týdně'},{id:'monthly',name:'Měsíčně',short:'Měsíčně'},{id:'workdays',name:'Pracovní dny',short:'Pracovní dny'}];
-const APP_VERSION=12.0,APP_LABEL='12.0',APP_NAME='Kompas';
+const APP_VERSION=12.1,APP_LABEL='12.1',APP_NAME='Kompas';
 try{localStorage.removeItem('den_lock')}catch(e){}
 try{localStorage.removeItem('den_pending_mails')}catch(e){}
 const CAT_REPAIR={'432daf02':'sva','7e50a6ef':'sva','97d85896':'sva','c47f2c69':'zam','59a4c2fe':'zam','b39cb988':'sva','727076df':'sva','83367aa7':'fre','6a18e6c6':'fre','79486842':'fre','83549cb7':'lin','3ef16c57':'ost','6443a152':'ost','738ca1f6':'fre','66c017e9':'zam','a1b882a7':'zam','249f1330':'zam','9c9d5258':'zam','354dbdf3':'zam','b9e025f0':'pul','4185f791':'pul','fbe7d7cd':'pul','aab0cba9':'sva','c6bfbc8d':'sva','4aeb6c08':'sva','a3d38c38':'sva','6e49be28':'ost','5b60e232':'ost','ee532219':'lin','deafdb98':'lin','527a770f':'inv','f19d2292':'inv','f2e4f1b8':'sva','875b1851':'fre','c0e70d5':'inv','802e913d':'ost'};
 function textKey(s){return String(s||'').trim().toLowerCase().replace(/[\u2010-\u2015\u2212]/g,'-').replace(/\s+/g,' ')}
 function fnv1a(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return (h>>>0).toString(16)}
+/* Stable ids: items without an id get the same id on every device (matches den_store.py). */
+function fpText(v){return String(v==null?'':v).trim().replace(/\s+/g,' ').toLowerCase()}
+function stableId(prefix,key){const k=String(key);return prefix+'h'+fnv1a(k).padStart(8,'0')+fnv1a(k+'|k').padStart(8,'0')}
+function fpExp(x){return x?String(x.date||'').slice(0,10)+'|'+fpText(x.what)+'|'+Number(x.czk):''}
+function fpNote(x){return x?fpText(x.text)+'|'+String(x.at||'').slice(0,16):''}
+function fpRem(x){return x?fpText(x.text)+'|'+String(x.when||''):''}
 const CAT_COLORS=['#bd0926','#4a8019','#c2410c','#1d4ed8','#7c3aed','#dc2626','#047857','#b45309','#db2777','#475569'];
 function slugifyCat(name){
   const map={'á':'a','ä':'a','č':'c','ď':'d','é':'e','ě':'e','í':'i','ň':'n','ó':'o','ö':'o','ř':'r','š':'s','ť':'t','ú':'u','ů':'u','ü':'u','ý':'y','ž':'z'};
@@ -204,7 +210,7 @@ function normalizeTask(raw){
   const due=toISOdate(raw.due||raw.term||'');
   const rep=String(raw.repeat||raw.r||'');
   const repeat=REPEATS.some(r=>r.id&&r.id===rep)?rep:'';
-  const updatedAt=itemUpdatedAt(raw);return{id:String(raw.id||uid('t')),text,cat,bucket,note:String(raw.note||raw.n||'').trim(),status,created,doneAt,prevStatus:raw.prevStatus||'open',updated:raw.updated||updatedAt||Date.now(),updatedAt:updatedAt||0,deleted:!!raw.deleted,from:from==='bot'||from==='isbot'||from==='IS BOT'?'bot':from,due,repeat};
+  const updatedAt=itemUpdatedAt(raw);return{id:String(raw.id||stableId('t',fpText(text))),text,cat,bucket,note:String(raw.note||raw.n||'').trim(),status,created,doneAt,prevStatus:raw.prevStatus||'open',updated:raw.updated||updatedAt||Date.now(),updatedAt:updatedAt||0,deleted:!!raw.deleted,from:from==='bot'||from==='isbot'||from==='IS BOT'?'bot':from,due,repeat};
 }
 function normalizeDay(raw){
   if(!raw||!raw.date)return null;
@@ -218,13 +224,13 @@ function normalizeDay(raw){
     if(fixed_min!=null)worked_min=fixed_min;
     else worked_min=Math.max(0,spans.reduce((a,[f,t])=>a+(spanMin(f,t)||0),0)-(pause_min||0));
   }
-  return{id:String(raw.id||uid('d')),date:String(raw.date).slice(0,10),spans,pause_min:pause_min||0,fixed_min:fixed_min!=null?fixed_min:null,worked_min:Math.round(worked_min||0),work:Array.isArray(raw.work)?raw.work.map(String):String(raw.work||'').split('\n').map(s=>s.trim()).filter(Boolean),notes:String(raw.notes||raw.note||'').trim(),areas:Array.isArray(raw.areas)?raw.areas:[],nonbillable,updatedAt:itemUpdatedAt(raw)||0,deleted:!!raw.deleted};
+  return{id:String(raw.id||('d'+String(raw.date).slice(0,10))),date:String(raw.date).slice(0,10),spans,pause_min:pause_min||0,fixed_min:fixed_min!=null?fixed_min:null,worked_min:Math.round(worked_min||0),work:Array.isArray(raw.work)?raw.work.map(String):String(raw.work||'').split('\n').map(s=>s.trim()).filter(Boolean),notes:String(raw.notes||raw.note||'').trim(),areas:Array.isArray(raw.areas)?raw.areas:[],nonbillable,updatedAt:itemUpdatedAt(raw)||0,deleted:!!raw.deleted};
 }
 function normalizeExp(raw){
   if(!raw)return null;
   const val=Number(raw.czk??raw.amount??raw.kc);const what=String(raw.what||raw.text||raw.desc||'').trim();const date=String(raw.date||'').slice(0,10);
   if(!date||!what||!isFinite(val))return null;
-  return{id:String(raw.id||uid('e')),date,what,czk:val,updatedAt:itemUpdatedAt(raw)||0,deleted:!!raw.deleted};
+  return{id:String(raw.id||stableId('e',date+'|'+fpText(what)+'|'+val)),date,what,czk:val,updatedAt:itemUpdatedAt(raw)||0,deleted:!!raw.deleted};
 }
 function normalizeRem(raw){
   if(!raw)return null;
@@ -232,7 +238,7 @@ function normalizeRem(raw){
   let when=raw.when||raw.at||null;
   if(when){when=String(when).replace(' ','T').slice(0,16);if(/^\d{4}-\d{2}-\d{2}$/.test(when))when+='T09:00'}
   else when=null;
-  return{id:String(raw.id||uid('r')),text,when,done:!!raw.done,created:toISOdate(raw.created)||todayISO(),updatedAt:itemUpdatedAt(raw)||0,deleted:!!raw.deleted};
+  return{id:String(raw.id||stableId('r',fpText(text)+'|'+(when||''))),text,when,done:!!raw.done,created:toISOdate(raw.created)||todayISO(),updatedAt:itemUpdatedAt(raw)||0,deleted:!!raw.deleted};
 }
 const TAG_SEF='Od šéfa';
 function nowStamp(){
@@ -255,7 +261,7 @@ function normalizeNote(raw){
   at=String(at).replace(' ','T').slice(0,16);
   if(/^\d{4}-\d{2}-\d{2}$/.test(at))at+='T09:00';
   if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(at))at=nowStamp();
-  return{id:String(raw.id||uid('n')),text,tag,at,updated:String(raw.updated||at).slice(0,16),updatedAt:itemUpdatedAt(raw)||0,deleted:!!raw.deleted};
+  return{id:String(raw.id||stableId('n',fpText(text)+'|'+at)),text,tag,at,updated:String(raw.updated||at).slice(0,16),updatedAt:itemUpdatedAt(raw)||0,deleted:!!raw.deleted};
 }
 function isIOS(){
   const ua=navigator.userAgent||'';
@@ -289,13 +295,14 @@ let invoices=(boot.invoices||[]).map(normalizeExp).filter(Boolean);
 let reminders=(boot.reminders||[]).map(normalizeRem).filter(Boolean);
 let notes=(boot.notes||[]).map(normalizeNote).filter(Boolean);
 let settings=Object.assign(defaultSettings(),boot.settings||{});
-var syncReady=false,syncTimer=0,syncBusy=false,syncApplying=false,syncSha=null,syncRemoteHash=null,syncRemoteAt=null;
+var syncFirstMerged=false,syncReady=false,syncTimer=0,syncBusy=false,syncApplying=false,syncSha=null,syncRemoteHash=null,syncRemoteAt=null;
 const persist=()=>{save('den_tasks',tasks);save('den_days',days);save('den_expenses',expenses);save('den_invoices',invoices);save('den_reminders',reminders);save('den_notes',notes);save('den_settings',settings);persistCats();scheduleSync()};
 function isLive(x){return !!(x&&!x.deleted)}
 function itemUpdatedAt(x){if(!x)return 0;const v=x.updatedAt!=null?x.updatedAt:x.updated;const n=Number(v);return Number.isFinite(n)?n:0}
 function touch(x){if(!x||typeof x!=='object')return x;const n=Date.now();x.updatedAt=n;x.updated=n;return x}
 let uiReady=false,selectedIds=new Set();
 repairStoredTasks(tasks);
+dedupeAll();
 persist();
 
 function dayMin(d){return d.nonbillable?0:d.worked_min}
@@ -887,8 +894,7 @@ $('sheetSave').onclick=()=>{
     if(!cred.ok){toast(cred.err);setSyncStatus('warn',cred.err);return}
     closeSheet();if(view==='dochazka')renderDochazka();updateTotal();toast('Nastavení uloženo');
     updatePairBanner();
-    pollInbox('force');
-    if(hasSyncCreds())syncNow('auto');
+    if(hasSyncCreds())syncNow('auto').then(()=>pollInbox('force'));else pollInbox('force');
     return;
   }
   if(sheetMode==='cat-edit'){
@@ -1597,9 +1603,10 @@ function payloadFromPush(data){
   if(Array.isArray(data))data={tasks:data};
   if(!data||typeof data!=='object')data={};
   const noteSrc=Array.isArray(data.poznamky)?data.poznamky:(Array.isArray(data.notes)?data.notes:[]);
+  const catsBefore=new Set(customCats.map(c=>c.id));
   ingestCategories(data.kategorie||data.categories||[]);
   return{
-    kategorie:(data.kategorie||data.categories||[]).map(normalizeCategory).filter(Boolean),
+    kategorie:customCats.filter(c=>!catsBefore.has(c.id)),
     tasks:(data.tasks||[]).map(x=>normalizeTask(Object.assign({},x,{from:x.from||'bot'}))).filter(Boolean),
     days:(data.days||[]).map(x=>normalizeDay(Object.assign({imported:true},x))).filter(Boolean),
     expenses:(data.expenses||[]).map(normalizeExp).filter(Boolean),
@@ -1635,12 +1642,12 @@ function applyInboxPayload(raw){
     if(ex&&ex.status!=='done'){ex.prevStatus=ex.status;ex.status='done';ex.doneAt=todayISO();touch(ex);n.done++}
   });
   p.reminders.forEach(r=>{
-    const i=reminders.findIndex(a=>a.id===r.id||(a.text===r.text&&a.when===r.when));
+    const i=reminders.findIndex(a=>a.id===r.id||fpRem(a)===fpRem(r));
     if(i>=0)return;
     reminders.push(r);n.reminders++;
   });
   p.poznamky.forEach(note=>{
-    const i=notes.findIndex(a=>a.id===note.id||(a.text===note.text&&a.at===note.at));
+    const i=notes.findIndex(a=>a.id===note.id||fpNote(a)===fpNote(note));
     if(i>=0)return;
     notes.push(note);n.poznamky++;
   });
@@ -1650,9 +1657,13 @@ function applyInboxPayload(raw){
     days.push(d);n.days++;
   });
   p.expenses.forEach(e=>{
-    const ex=expenses.find(a=>a.date===e.date&&a.what===e.what);
+    const ex=expenses.find(a=>a.id===e.id||fpExp(a)===fpExp(e)||(a.date===e.date&&a.what===e.what));
     if(ex)return;
     expenses.push(e);n.expenses++;
+  });
+  p.invoices.forEach(e=>{
+    if(invoices.find(a=>a.id===e.id||fpExp(a)===fpExp(e)))return;
+    invoices.push(e);
   });
   if(p.billedUntil)settings.billedUntil=p.billedUntil;
   if(p.specialEnd)settings.specialEnd=p.specialEnd;
@@ -1681,6 +1692,7 @@ async function pollInbox(reason){
   const key=getInboxKey();
   if(!key)return;
   if(inboxBusy)return;
+  if(getSyncToken()&&!syncFirstMerged)return;
   if(reason!=='force'&&Date.now()-lastInboxAt<2000)return;
   inboxBusy=true;lastInboxAt=Date.now();
   try{
@@ -1709,6 +1721,7 @@ async function pollInbox(reason){
       seen.add(String(m.id));
     });
     saveAppliedInbox([...seen]);
+    dedupeAll();
     persist();
     refreshLists();
     inboxToast(totals);
@@ -1910,6 +1923,7 @@ function applyImported(b){
   b.invoices.forEach(d=>upsert(invoices,d,(a,c)=>a.date===c.date&&a.what===c.what));
   b.reminders.forEach(d=>upsert(reminders,d,(a,c)=>a.id===d.id||(a.text===d.text&&a.when===d.when)));
   (b.poznamky||[]).forEach(n=>upsert(notes,n,(a,c)=>a.id===c.id||(a.text===c.text&&a.at===c.at)));
+  dedupeAll();
   tasks.sort((a,b)=>String(a.created).localeCompare(String(b.created)));
   days.sort((a,b)=>a.date.localeCompare(b.date));
   expenses.sort((a,b)=>a.date.localeCompare(b.date));
@@ -2143,6 +2157,43 @@ function bootUi(){
   pollInbox('init');
 }
 
+/* Pick one winner among copies: newest edit, then live over deleted, then smallest id (same on every device). */
+function betterCopy(a,b){
+  const ua=itemUpdatedAt(a),ub=itemUpdatedAt(b);
+  if(ua!==ub)return ua>ub?a:b;
+  if(!!a.deleted!==!!b.deleted)return a.deleted?b:a;
+  return String(a.id||'')<=String(b.id||'')?a:b;
+}
+function dedupeBy(list,keyFn){
+  const map=new Map(),order=[];
+  (list||[]).forEach(it=>{
+    if(!it)return;
+    const k=keyFn(it);
+    if(!k){order.push({it});return}
+    const cur=map.get(k);
+    if(!cur){const slot={it};map.set(k,slot);order.push(slot);return}
+    cur.it=betterCopy(cur.it,it);
+  });
+  return order.map(s=>s.it);
+}
+function dedupeList(list,fpFn){return dedupeBy(dedupeBy(list,x=>x.id),fpFn)}
+function dedupeAll(){
+  const n=()=>expenses.length+invoices.length+notes.length+reminders.length+days.length+tasks.length;
+  const before=n();
+  tasks=dedupeBy(tasks,x=>x.id);
+  days=dedupeBy(days,x=>x.date||x.id);
+  expenses=dedupeList(expenses,fpExp);
+  invoices=dedupeList(invoices,fpExp);
+  notes=dedupeList(notes,fpNote);
+  reminders=dedupeList(reminders,fpRem);
+  return before-n();
+}
+function mergeAppliedInbox(remote){
+  if(!Array.isArray(remote)||!remote.length)return;
+  const cur=loadAppliedInbox().map(String),seen=new Set(cur);
+  let add=false;remote.forEach(x=>{const s=String(x);if(s&&!seen.has(s)){seen.add(s);cur.push(s);add=true}});
+  if(add)saveAppliedInbox(cur);
+}
 function mergeById(local, remote, keyFn){
   const map=new Map();
   const order=[];
@@ -2169,10 +2220,12 @@ function mergeRemoteState(data){
   const srcCats=(data.categories||data.kategorie||[]).map(normalizeCategory).filter(Boolean);
   tasks=mergeById(tasks,srcTasks,x=>x.id);
   days=mergeById(days,srcDays,x=>x.date||x.id);
-  expenses=mergeById(expenses,srcExp,x=>x.id||(x.date+'|'+x.what));
-  invoices=mergeById(invoices,srcInv,x=>x.id||(x.date+'|'+x.what));
+  expenses=mergeById(expenses,srcExp,x=>x.id);
+  invoices=mergeById(invoices,srcInv,x=>x.id);
   reminders=mergeById(reminders,srcRem,x=>x.id);
   notes=mergeById(notes,srcNotes,x=>x.id);
+  dedupeAll();
+  mergeAppliedInbox(data.applied);
   if(srcCats.length)customCats=mergeById(customCats,srcCats,x=>x.id);
   if(data.settings&&typeof data.settings==='object'){
     if(itemUpdatedAt(data.settings)>=itemUpdatedAt(settings))settings=Object.assign({},settings,data.settings);
@@ -2540,13 +2593,15 @@ async function pullAndMerge(){
   if(!getSyncToken()){updatePairBanner();const err=new Error('notoken');err.code='notoken';throw err}
   if(!key){const err=new Error('nokey');err.code='nokey';throw err}
   const got=await githubGetState();
-  if(got.missing){syncRemoteHash=null;syncRemoteAt=null;return 0}
+  if(got.missing){syncRemoteHash=null;syncRemoteAt=null;syncFirstMerged=true;return 0}
   let data;
   try{data=await decryptInboxFile(got.obj,key)}
   catch(e){const err=new Error('decrypt');err.code='decrypt';throw err}
   if(!data||typeof data!=='object')return 0;
   rememberRemote(data,got.sha);
-  return mergeRemoteState(data);
+  const ch=mergeRemoteState(data);
+  syncFirstMerged=true;
+  return ch;
 }
 function localMatchesRemote(){
   return !!(syncRemoteHash&&contentHash(liveCloudPayload())===syncRemoteHash);
@@ -2999,8 +3054,8 @@ async function refreshEverything(){
   let remote=null;
   try{remote=await fetchRemoteVersion()}catch(e){}
   if(remote!=null&&remote>Number(APP_VERSION)){setSyncStatus('busy','Aktualizuji…');await applySilentUpdate(setupSW._reg,remote);return}
-  pollInbox('force');
   if(hasSyncCreds())await syncNow('pull');
+  await pollInbox('force');
   refreshLists();
   if(hasSyncCreds()&&navigator.onLine)flashUpdated();
   else if(!hasSyncCreds())toast('Kompas zatím není propojený');
@@ -3223,8 +3278,8 @@ async function applySilentUpdate(reg,remote){
 }
 async function afterResumePull(){
   await bootGate;
-  pollInbox('resume');
   await syncNow('resume');
+  await pollInbox('resume');
   if(hasSyncCreds()&&navigator.onLine)flashUpdated();
 }
 function onAppResume(){
