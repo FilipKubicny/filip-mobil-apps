@@ -21,7 +21,7 @@ const BUCKETS=[
 ];
 const STATUSES=[{id:'open',name:'Otevřené'},{id:'wip',name:'Rozpracované'},{id:'wait',name:'Čeká'},{id:'done',name:'Hotovo'}];
 const REPEATS=[{id:'',name:'Neopakuje se',short:'Neopakuje se'},{id:'daily',name:'Denně',short:'Denně'},{id:'weekly',name:'Týdně',short:'Týdně'},{id:'monthly',name:'Měsíčně',short:'Měsíčně'},{id:'workdays',name:'Pracovní dny',short:'Pracovní dny'}];
-const APP_VERSION=12.5,APP_LABEL='12.5',APP_NAME='Kompas';
+const APP_VERSION=12.6,APP_LABEL='12.6',APP_NAME='Kompas';
 const VIEWS=['dnes','ukoly','biz','dochazka','rems','notes'];
 const BIZ_STATUSES=[{id:'idea',name:'Nápad'},{id:'validating',name:'Ověřuji'},{id:'launching',name:'Rozjíždím'},{id:'running',name:'Běží'},{id:'paused',name:'Odloženo'}];
 const BIZ_CANVAS=[
@@ -758,7 +758,10 @@ function openExpSheet(e){
 }
 
 /* ---------- Tasks UI ---------- */
-function matchesCat(t){return isLive(t)&&(taskFilter==='all'||t.cat===taskFilter)}
+/* Úkol, který jen nese název startupu (vznikl převodem staré kategorie Byznys), do Úkolů nepatří – je ve Startupech. */
+function isBizStub(t){if(!t)return false;if(String(t.id).startsWith('biz-'))return true;const b=businesses.find(x=>isLive(x)&&x.taskIds.includes(t.id));return !!b&&fpText(b.name)===fpText(t.text)}
+function isTaskShown(t){return isLive(t)&&!isBizStub(t)}
+function matchesCat(t){return isTaskShown(t)&&(taskFilter==='all'||t.cat===taskFilter)}
 function sortTasks(arr){
   const so={wip:0,open:1,wait:2,done:3};
   return arr.sort((a,b)=>(so[a.status]-so[b.status])||String(a.created).localeCompare(String(b.created))||a.text.localeCompare(b.text,'cs'));
@@ -774,7 +777,7 @@ function visibleTasks(){
 function countBucket(id){
   return tasks.filter(t=>{
     if(!isLive(t)||!matchesCat(t))return false;
-    if(id==='all')return true;
+    if(id==='all')return t.status!=='done';
     if(id==='done')return t.status==='done';
     return t.status!=='done'&&t.bucket===id;
   }).length;
@@ -1132,7 +1135,7 @@ $('sheetDelete').onclick=()=>{
 
 /* ---------- Dnes task + reminder quick UI ---------- */
 function todayTaskList(){
-  const open=tasks.filter(t=>isLive(t)&&t.status!=='done');
+  const open=tasks.filter(t=>isTaskShown(t)&&t.status!=='done');
   const due=sortDue(open.filter(isDueSoon));
   const dueIds=new Set(due.map(t=>t.id));
   const soon=open.filter(t=>!dueIds.has(t.id)&&(t.bucket==='tomorrow'||t.status==='wip'));
@@ -2811,7 +2814,6 @@ function pollState(reason){return syncNow(reason||'pull')}
 
 
 function tableTasks(){
-  if(taskTab==='all')return sortTasks(tasks.filter(t=>isLive(t)&&matchesCat(t)&&t.status!=='done')).concat(sortTasks(tasks.filter(t=>isLive(t)&&matchesCat(t)&&t.status==='done')));
   return visibleTasks();
 }
 function renderTaskTable(){
@@ -2823,7 +2825,8 @@ function renderTaskTable(){
     const tr=document.createElement('tr');
     if(selectedIds.has(t.id))tr.classList.add('sel');
     tr.dataset.id=t.id;
-    tr.innerHTML='<td class="col-check"><input type="checkbox" '+(selectedIds.has(t.id)?'checked':'')+' aria-label="Vybrat"></td>'+
+    if(t.status==='done')tr.classList.add('is-done');
+    tr.innerHTML='<td class="col-check"><input type="checkbox" '+(t.status==='done'?'checked':'')+' aria-label="'+esc((t.status==='done'?'Vrátit mezi otevřené: ':'Označit hotovo: ')+t.text)+'" title="'+(t.status==='done'?'Vrátit mezi otevřené':'Hotovo')+'"></td>'+
       '<td class="task-name" data-col="text">'+esc(t.text)+'</td>'+
       '<td data-col="cat">'+esc(c.name)+'</td>'+
       '<td data-col="bucket">'+esc(b.name)+'</td>'+
@@ -2831,14 +2834,13 @@ function renderTaskTable(){
       '<td data-col="status">'+esc(st.name)+'</td>'+
       '<td data-col="note">'+esc(t.note||'')+'</td>';
     const cb=tr.querySelector('input[type=checkbox]');
-    cb.onchange=()=>{if(cb.checked)selectedIds.add(t.id);else selectedIds.delete(t.id);syncBulkBar();tr.classList.toggle('sel',cb.checked)};
+    cb.onchange=()=>{haptic();toggleDone(t)};
     tr.querySelectorAll('td[data-col]').forEach(td=>{
       td.onclick=ev=>{if(ev.target.tagName==='INPUT'||ev.target.tagName==='SELECT')return;startCellEdit(td,t,td.dataset.col)};
     });
     body.appendChild(tr);
   });
   const all=$('selAll');
-  if(all){all.checked=rows.length>0&&rows.every(t=>selectedIds.has(t.id));all.indeterminate=rows.some(t=>selectedIds.has(t.id))&&!all.checked}
   syncBulkBar();
 }
 function syncBulkBar(){
@@ -2939,7 +2941,7 @@ function liveBiz(){return businesses.filter(isLive).sort((a,b)=>(BIZ_RANK[a.stat
 function bizById(id){return businesses.find(b=>b.id===id&&isLive(b))||null}
 function bizStatusName(id){const s=BIZ_STATUSES.find(x=>x.id===id);return s?s.name:'Nápad'}
 function bizForTask(id){return businesses.find(b=>isLive(b)&&b.taskIds.includes(id))||null}
-function bizTasks(b){const m=new Map(tasks.filter(isLive).map(t=>[t.id,t]));return b.taskIds.map(id=>m.get(id)).filter(Boolean)}
+function bizTasks(b){const m=new Map(tasks.filter(isTaskShown).map(t=>[t.id,t]));return b.taskIds.map(id=>m.get(id)).filter(Boolean)}
 function bizFilled(b){
   let n=0;BIZ_CANVAS.forEach(f=>{if(f.id==='customers'?b.customers:b.canvas[f.id])n++});
   return n;
@@ -3673,7 +3675,7 @@ function renderSearch(){
   VIEWS.forEach(id=>$('view-'+id).hidden=true);
   box.hidden=false;box.innerHTML='';
   const h=document.createElement('h2');h.className='task-sec';h.textContent='Výsledky hledání';box.appendChild(h);
-  const tHits=sortTasks(tasks.filter(t=>isLive(t)&&hay(t.text+' '+(t.note||'')).includes(q)));
+  const tHits=sortTasks(tasks.filter(t=>isTaskShown(t)&&hay(t.text+' '+(t.note||'')).includes(q)));
   const nHits=notes.filter(n=>isLive(n)&&hay(n.text+' '+(n.tag||'')).includes(q));
   const bHits=liveBiz().filter(b=>hay([b.name,b.pitch,b.customers].concat(Object.values(b.canvas),Object.values(b.numbers),b.log.filter(isLive).map(e=>e.text)).join(' ')).includes(q));
   const rHits=upcomingRems().concat(reminders.filter(r=>isLive(r)&&r.done)).filter(r=>hay(r.text).includes(q));

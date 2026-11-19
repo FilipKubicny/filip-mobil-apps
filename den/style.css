@@ -500,3 +500,5 @@ details.advanced[open] summary::after{transform:rotate(90deg)}
 }
 @media (min-width:1024px){#remsBack{display:none}}
 body.biz-detail-on .qfab{display:none}
+#taskTable th.col-check{width:64px;text-transform:none}
+#taskTable tbody tr.is-done td.task-name{text-decoration:line-through;color:var(--muted)}
