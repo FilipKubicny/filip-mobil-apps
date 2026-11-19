@@ -21,7 +21,7 @@ const BUCKETS=[
 ];
 const STATUSES=[{id:'open',name:'Otevřené'},{id:'wip',name:'Rozpracované'},{id:'wait',name:'Čeká'},{id:'done',name:'Hotovo'}];
 const REPEATS=[{id:'',name:'Neopakuje se',short:'Neopakuje se'},{id:'daily',name:'Denně',short:'Denně'},{id:'weekly',name:'Týdně',short:'Týdně'},{id:'monthly',name:'Měsíčně',short:'Měsíčně'},{id:'workdays',name:'Pracovní dny',short:'Pracovní dny'}];
-const APP_VERSION=12.6,APP_LABEL='12.6',APP_NAME='Kompas';
+const APP_VERSION=12.7,APP_LABEL='12.7',APP_NAME='Kompas';
 const VIEWS=['dnes','ukoly','biz','dochazka','rems','notes'];
 const BIZ_STATUSES=[{id:'idea',name:'Nápad'},{id:'validating',name:'Ověřuji'},{id:'launching',name:'Rozjíždím'},{id:'running',name:'Běží'},{id:'paused',name:'Odloženo'}];
 const BIZ_CANVAS=[
@@ -259,7 +259,53 @@ function normalizeExp(raw){
   if(!raw)return null;
   const val=Number(raw.czk??raw.amount??raw.kc);const what=String(raw.what||raw.text||raw.desc||'').trim();const date=String(raw.date||'').slice(0,10);
   if(!date||!what||!isFinite(val))return null;
-  return{id:String(raw.id||stableId('e',date+'|'+fpText(what)+'|'+val)),date,what,czk:val,updatedAt:itemUpdatedAt(raw)||0,deleted:!!raw.deleted};
+  return{id:String(raw.id||stableId('e',date+'|'+fpText(what)+'|'+val)),date,what,czk:val,business:normalizeExpBusiness(raw.business||raw.client||raw.firma),updatedAt:itemUpdatedAt(raw)||0,deleted:!!raw.deleted};
+}
+const EXP_BIZ_SAPEKOR='SAPEKOR';
+function normalizeExpBusiness(v){
+  const s=String(v||'').trim();
+  if(!s||/^sapekor$/i.test(s))return EXP_BIZ_SAPEKOR;
+  return s;
+}
+function isSapekorExp(e){return normalizeExpBusiness(e&&e.business)===EXP_BIZ_SAPEKOR}
+function sapekorExpenses(list){return (list||[]).filter(isSapekorExp)}
+function otherExpenses(list){return (list||[]).filter(e=>!isSapekorExp(e))}
+function expBizLabel(e){
+  const id=normalizeExpBusiness(e&&e.business);
+  if(id===EXP_BIZ_SAPEKOR)return 'SAPEKOR';
+  const b=(typeof bizById==='function'?bizById(id):null)||(businesses||[]).find(x=>isLive(x)&&(x.id===id||fpText(x.name)===fpText(id)));
+  return b?b.name:id;
+}
+function groupExpByBiz(list){
+  const map=new Map();
+  (list||[]).forEach(e=>{
+    const name=expBizLabel(e);
+    if(!map.has(name))map.set(name,[]);
+    map.get(name).push(e);
+  });
+  return [...map.entries()].sort((a,b)=>a[0].localeCompare(b[0],'cs'));
+}
+function spanGaps(spans){
+  const g=[];
+  for(let i=1;i<(spans||[]).length;i++){
+    const m=spanMin(spans[i-1][1],spans[i][0]);
+    if(m>0)g.push(m);
+  }
+  return g;
+}
+function dayPauseTxt(d){
+  if(!d)return '';
+  if((d.pause_min||0)>0)return 'pauza '+fmtPause(d.pause_min);
+  const gaps=spanGaps(d.spans);
+  const tot=gaps.reduce((a,b)=>a+b,0);
+  if(tot<=0)return '';
+  if(gaps.length===1&&tot>=15&&tot<=90)return 'oběd '+fmtPause(tot);
+  return 'pauza '+fmtPause(tot);
+}
+function dayPauseCol(d){
+  if((d.pause_min||0)>0)return fmtPause(d.pause_min);
+  const tot=spanGaps(d.spans).reduce((a,b)=>a+b,0);
+  return tot>0?fmtPause(tot):'–';
 }
 function normalizeRem(raw){
   if(!raw)return null;
@@ -746,14 +792,32 @@ function openRemSheet(r){
   remChipBar($('eRemChips'),$('eRemDate'),$('eRemTime'));
   setTimeout(()=>$('eRemText')&&$('eRemText').focus(),40);
 }
+function expBizOptions(){
+  const opts=[{id:EXP_BIZ_SAPEKOR,name:'SAPEKOR'}];
+  (typeof liveBiz==='function'?liveBiz():[]).forEach(b=>opts.push({id:b.id,name:b.name}));
+  return opts;
+}
+function paintExpBizChips(){
+  const el=$('eExpBiz');if(!el)return;
+  let cur=normalizeExpBusiness($('overlay')._expBiz);
+  const opts=expBizOptions();
+  const hit=opts.find(o=>o.id===cur||fpText(o.name)===fpText(cur));
+  if(hit)cur=hit.id;
+  $('overlay')._expBiz=cur;
+  paintChips(el,opts,cur,false,id=>{$('overlay')._expBiz=id;paintExpBizChips()});
+}
 function openExpSheet(e){
   sheetMode='exp';sheetTarget=e||null;
   $('sheetTitle').textContent=e?'Upravit výdaj':'Nový výdaj';
   $('sheetDelete').hidden=!e;
+  const biz=normalizeExpBusiness(e&&e.business);
   $('sheetBody').innerHTML='<div class="field"><label for="eExpDate">Den</label><input type="date" id="eExpDate" value="'+esc((e&&e.date)||editDayDate||todayISO())+'"></div>'+
     '<div class="field"><label for="eExpWhat">Výdaj</label><input type="text" id="eExpWhat" value="'+esc(e?e.what:'')+'" placeholder="Za co"></div>'+
-    '<div class="field"><label for="eExpCzk">Částka v Kč</label><input type="number" id="eExpCzk" min="0" step="1" inputmode="numeric" value="'+(e?esc(String(e.czk)):'')+'"></div>';
+    '<div class="field"><label for="eExpCzk">Částka v Kč</label><input type="number" id="eExpCzk" min="0" step="1" inputmode="numeric" value="'+(e?esc(String(e.czk)):'')+'"></div>'+
+    '<div class="field"><span class="lbl">Pro koho</span><div class="chips" id="eExpBiz"></div></div>';
   $('overlay').hidden=false;document.body.classList.add('locked');
+  $('overlay')._expBiz=biz;
+  paintExpBizChips();
   setTimeout(()=>$('eExpWhat')&&$('eExpWhat').focus(),40);
 }
 
@@ -849,7 +913,9 @@ function renderTasks(){
     tabs.appendChild(btn);
   });
   const fil=$('taskFilters');fil.innerHTML='';
-  [{id:'all',name:'Vše',short:'Vše',color:null}].concat(allCats()).forEach(c=>{
+  if(taskFilter!=='all'&&!tasks.some(t=>isTaskShown(t)&&t.cat===taskFilter))taskFilter='all';
+  const catChips=[{id:'all',name:'Vše',short:'Vše',color:null}].concat(allCats().filter(c=>tasks.some(t=>isTaskShown(t)&&t.cat===c.id)));
+  catChips.forEach(c=>{
     const btn=document.createElement('button');btn.type='button';btn.className='fchip'+(taskFilter===c.id?' on':'');
     if(c.color)btn.style.setProperty('--cat',c.color);
     btn.innerHTML=(c.color?'<span class="dot"></span>':'')+esc(c.short||c.name);
@@ -1081,14 +1147,15 @@ $('sheetSave').onclick=()=>{
   }
   if(sheetMode==='exp'){
     const date=$('eExpDate')&&$('eExpDate').value,what=(($('eExpWhat')&&$('eExpWhat').value)||'').trim(),amt=Number($('eExpCzk')&&$('eExpCzk').value);
+    const biz=normalizeExpBusiness(($('overlay')&&$('overlay')._expBiz)||EXP_BIZ_SAPEKOR);
     if(!date||!what||!isFinite(amt)){toast('Doplň den, za co a částku');return}
     if(sheetTarget){
       const e=sheetTarget,copy=JSON.parse(JSON.stringify(e));
-      e.date=date;e.what=what;e.czk=amt;touch(e);
+      e.date=date;e.what=what;e.czk=amt;e.business=biz;touch(e);
       persist();closeSheet();refreshLists();
       undoRestore(e,copy,'Výdaj uložen');
     }else{
-      expenses.push(touch(normalizeExp({id:uid('e'),date,what,czk:amt})));
+      expenses.push(touch(normalizeExp({id:uid('e'),date,what,czk:amt,business:biz})));
       persist();closeSheet();refreshLists();
       toast('Výdaj přidán');
     }
@@ -1423,12 +1490,28 @@ function renderDnes(){
 }
 
 /* ---------- Docházka overview ---------- */
+function appendExpCard(host,list,totalLabel){
+  const card=document.createElement('div');card.className='card';
+  list.forEach(e=>{
+    const row=document.createElement('button');row.type='button';row.className='rowline exp-row';
+    row.innerHTML='<div><b>'+esc(czDate(e.date))+'</b><div class="muted">'+esc(e.what)+'</div></div><div class="amt">'+czk(e.czk)+'</div>';
+    row.onclick=()=>openExpSheet(e);
+    card.appendChild(row);
+  });
+  const sum=list.reduce((a,e)=>a+e.czk,0);
+  const tot=document.createElement('div');tot.className='bill-total';tot.innerHTML='<span>'+esc(totalLabel)+'</span><span>'+czk(sum)+'</span>';
+  card.appendChild(tot);
+  host.appendChild(card);
+  return sum;
+}
 function renderDochazka(){
   const [y,m]=monthYM.split('-').map(Number);
   $('monthTitle').textContent=MONTHS[m-1]+' '+y;
   if($('pickDay')&&editDayDate)$('pickDay').value=editDayDate;
   const list=days.filter(d=>isLive(d)&&d.date.startsWith(monthYM)).sort((a,b)=>a.date.localeCompare(b.date));
-  const exp=expenses.filter(e=>isLive(e)&&e.date.startsWith(monthYM)).sort((a,b)=>a.date.localeCompare(b.date));
+  const monthExpAll=expenses.filter(e=>isLive(e)&&e.date.startsWith(monthYM)).sort((a,b)=>a.date.localeCompare(b.date));
+  const exp=sapekorExpenses(monthExpAll);
+  const otherExp=otherExpenses(monthExpAll);
   const billMin=list.reduce((a,d)=>a+dayMin(d),0),expSum=exp.reduce((a,e)=>a+e.czk,0),pauseMin=list.reduce((a,d)=>a+(d.pause_min||0),0);
   $('monthMetrics').innerHTML=
     metric(fmt(billMin),'Odpracováno')+metric(czk(pay(billMin)),'Práce ('+settings.rate+' Kč/h)')+
@@ -1449,7 +1532,7 @@ function renderDochazka(){
   list.forEach(d=>{
     const b=document.createElement('button');b.type='button';b.className='day'+(d.nonbillable?' nb':'');
     const when=(d.spans||[]).map(([f,t])=>f+'–'+t).join(', ');
-    const pauseTxt=(d.pause_min||0)>0?'pauza '+fmtPause(d.pause_min):'';
+    const pauseTxt=dayPauseTxt(d);
     const areas=(d.areas||[]).map(a=>AREAS[a]||a).filter(Boolean).join(', ');
     const title=d.work.length?d.work.join(' · '):(d.nonbillable?'Mimo SAPEKOR':'Bez popisu');
     b.innerHTML='<div class="lead"><b>'+esc(czDateLong(d.date))+'</b><span class="meta">'+(d.nonbillable?'nefakturuje se':fmt(d.worked_min)+' · '+czk(pay(dayMin(d))))+'</span></div>'+
@@ -1458,26 +1541,23 @@ function renderDochazka(){
     box.appendChild(b);
   });
   const expBox=$('monthExp'),expTitle=$('monthExpTitle');
-  if(!exp.length){expTitle.hidden=true;expBox.innerHTML=''}
+  expBox.innerHTML='';
+  if(!exp.length&&!otherExp.length){expTitle.hidden=true}
   else{
-    expTitle.hidden=false;
-    expBox.innerHTML='';
-    const card=document.createElement('div');card.className='card';
-    exp.forEach(e=>{
-      const row=document.createElement('button');row.type='button';row.className='rowline exp-row';
-      row.innerHTML='<div><b>'+esc(czDate(e.date))+'</b><div class="muted">'+esc(e.what)+'</div></div><div class="amt">'+czk(e.czk)+'</div>';
-      row.onclick=()=>openExpSheet(e);
-      card.appendChild(row);
+    expTitle.hidden=!exp.length;
+    if(exp.length)appendExpCard(expBox,exp,'Celkem výdaje');
+    groupExpByBiz(otherExp).forEach(([name,list])=>{
+      const h=document.createElement('h2');
+      h.textContent='Výdaje mimo SAPEKOR – '+name;
+      expBox.appendChild(h);
+      appendExpCard(expBox,list,'Celkem');
     });
-    const tot=document.createElement('div');tot.className='bill-total';tot.innerHTML='<span>Celkem výdaje</span><span>'+czk(expSum)+'</span>';
-    card.appendChild(tot);
-    expBox.appendChild(card);
   }
   const p=period();
   const openDays=days.filter(d=>isLive(d)&&inPeriod(d.date,p)&&dayMin(d)>0).sort((a,b)=>a.date.localeCompare(b.date));
   const openMin=openDays.reduce((a,d)=>a+dayMin(d),0);
   const openPause=days.filter(d=>isLive(d)&&inPeriod(d.date,p)).reduce((a,d)=>a+(d.pause_min||0),0);
-  const openExp=expenses.filter(e=>isLive(e)&&inPeriod(e.date,p)).sort((a,b)=>a.date.localeCompare(b.date));
+  const openExp=sapekorExpenses(expenses.filter(e=>isLive(e)&&inPeriod(e.date,p))).sort((a,b)=>a.date.localeCompare(b.date));
   const openExpSum=openExp.reduce((a,e)=>a+e.czk,0),total=pay(openMin)+openExpSum;
   let html='<p class="muted" style="margin:0 0 10px">Období '+esc(czPeriod(p.start,p.end))+(p.end<='2026-11-30'&&settings.billedUntil<'2026-11-30'?' · pak už celé kalendářní měsíce':'')+', bez DPH.</p>';
   html+='<div class="rowline"><div>Práce, '+czCount(openDays.length,'den','dny','dnů')+' zatím</div><div class="amt">'+fmt(openMin)+' × '+settings.rate+' Kč<br>'+czk(pay(openMin))+'</div></div>';
@@ -3229,7 +3309,7 @@ function quickWhenLabel(p){
   return d+(p.time?' v '+p.time:'');
 }
 
-try{window.__kompas={parseQuick,version:APP_LABEL,timesheetHtml,timesheetRows,timesheetCsv,computeWorked,fmtPause,period}}catch(e){}
+try{window.__kompas={parseQuick,version:APP_LABEL,timesheetHtml,timesheetRows,timesheetCsv,computeWorked,fmtPause,period,normalizeExp,normalizeExpBusiness,isSapekorExp,dayPauseTxt,dayPauseCol,spanGaps,EXP_BIZ_SAPEKOR}}catch(e){}
 /* ---------- Quick add sheet (FAB) ---------- */
 let quickKind='auto';
 function openQuickAdd(preset){
@@ -3690,7 +3770,7 @@ function renderSearch(){
 function timesheetRows(p){
   p=p||period();
   const list=days.filter(d=>isLive(d)&&inPeriod(d.date,p)).sort((a,b)=>a.date.localeCompare(b.date));
-  const exp=expenses.filter(e=>isLive(e)&&inPeriod(e.date,p)).sort((a,b)=>a.date.localeCompare(b.date));
+  const exp=sapekorExpenses(expenses.filter(e=>isLive(e)&&inPeriod(e.date,p))).sort((a,b)=>a.date.localeCompare(b.date));
   const billMin=list.reduce((a,d)=>a+dayMin(d),0),expSum=exp.reduce((a,e)=>a+e.czk,0),workCzk=pay(billMin);
   const pauseMin=list.reduce((a,d)=>a+(d.pause_min||0),0);
   return {p,list,exp,billMin,pauseMin,expSum,workCzk,total:workCzk+expSum,rate:settings.rate};
@@ -3699,7 +3779,7 @@ function timesheetHtml(ts){
   const rows=ts.list.map(d=>{
     const when=(d.spans&&d.spans.length)?d.spans.map(([f,t])=>f+'–'+t).join(', '):'';
     const work=(d.work||[]).join('; ');
-    const pause=(d.pause_min||0)>0?fmtPause(d.pause_min):'–';
+    const pause=dayPauseCol(d);
     return '<tr><td>'+esc(czDate(d.date))+'</td><td>'+esc(when)+'</td><td class="num">'+esc(pause)+'</td><td class="num">'+esc(d.nonbillable?'0 (nefakt.)':fmt(dayMin(d)))+'</td><td>'+esc(work||d.notes||'')+'</td></tr>';
   }).join('');
   const exprows=ts.exp.map(e=>'<tr><td>'+esc(czDate(e.date))+'</td><td colspan="2">'+esc(e.what)+'</td><td class="num">'+esc(czk(e.czk))+'</td></tr>').join('');
@@ -3724,7 +3804,7 @@ function timesheetCsv(ts){
     const from=d.spans&&d.spans[0]?d.spans[0][0]:'';
     const to=d.spans&&d.spans[0]?d.spans[0][1]:'';
     const hours=d.nonbillable?0:(dayMin(d)/60);
-    const pause=(d.pause_min||0)>0?fmtPause(d.pause_min):'–';
+    const pause=dayPauseCol(d);
     lines.push([d.date,from,to,pause,String(hours).replace('.',','),d.nonbillable?'ano':'',(d.work||[]).join('; '),'','']);
   });
   ts.exp.forEach(e=>lines.push([e.date,'','','','','','',e.what,String(e.czk)]));
