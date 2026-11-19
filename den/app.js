@@ -21,7 +21,7 @@ const BUCKETS=[
 ];
 const STATUSES=[{id:'open',name:'Otevřené'},{id:'wip',name:'Rozpracované'},{id:'wait',name:'Čeká'},{id:'done',name:'Hotovo'}];
 const REPEATS=[{id:'',name:'Neopakuje se',short:'Neopakuje se'},{id:'daily',name:'Denně',short:'Denně'},{id:'weekly',name:'Týdně',short:'Týdně'},{id:'monthly',name:'Měsíčně',short:'Měsíčně'},{id:'workdays',name:'Pracovní dny',short:'Pracovní dny'}];
-const APP_VERSION=12.3,APP_LABEL='12.3',APP_NAME='Kompas';
+const APP_VERSION=12.4,APP_LABEL='12.4',APP_NAME='Kompas';
 const VIEWS=['dnes','ukoly','biz','dochazka','rems','notes'];
 const BIZ_STATUSES=[{id:'idea',name:'Nápad'},{id:'validating',name:'Ověřuji'},{id:'launching',name:'Rozjíždím'},{id:'running',name:'Běží'},{id:'paused',name:'Odloženo'}];
 const BIZ_CANVAS=[
@@ -388,13 +388,13 @@ function refreshLists(){
 function viewTitle(v){
   v=v||view;
   if(v==='biz'&&bizOpenId){const b=bizById(bizOpenId);if(b)return b.name}
-  return ({dnes:'Dnes',ukoly:'Úkoly',biz:'Byznys',dochazka:'Docházka',rems:'Připomínky',notes:'Poznámky'})[v]||APP_NAME;
+  return ({dnes:'Dnes',ukoly:'Úkoly',biz:'Startupy',dochazka:'Docházka',rems:'Připomínky',notes:'Poznámky'})[v]||APP_NAME;
 }
 function syncTitle(){
   const name=viewTitle();
   const compact=document.documentElement.classList.contains('compact');
   if($('navTitle'))$('navTitle').textContent=compact?name:APP_NAME;
-  const big=view==='biz'?'Byznys':name;
+  const big=view==='biz'?'Startupy':name;
   document.body.classList.toggle('biz-detail-on',view==='biz'&&!!bizOpenId);
   if($('largeTitle'))$('largeTitle').innerHTML=esc(big)+' <span class="ver" id="appVer">verze '+APP_LABEL+'</span>';
 }
@@ -936,7 +936,7 @@ function openTaskSheet(task){
     '<div class="field"><span class="lbl">Stav</span><div class="chips" id="fStatus"></div></div>'+
     '<div class="field"><label for="fDue">Termín</label><input type="date" id="fDue" value="'+esc(draft.due||'')+'"></div>'+
     '<div class="field"><span class="lbl">Opakování</span><div class="chips" id="fRepeat"></div></div>'+
-    (bizOpts.length?'<div class="field"><span class="lbl">Byznys</span><div class="chips" id="fBiz"></div></div>':'')+
+    (bizOpts.length?'<div class="field"><span class="lbl">Startup</span><div class="chips" id="fBiz"></div></div>':'')+
     '<div class="field"><label for="fNote">Poznámka</label><textarea id="fNote" rows="2" placeholder="Volitelná poznámka">'+esc(draft.note)+'</textarea></div>';
   const redraw=()=>{if($('fBiz'))paintChips($('fBiz'),[{id:'',name:'Žádný'}].concat(bizOpts),draft.biz,false,id=>{draft.biz=id;redraw()});paintCatPicker($('fCat'),draft.cat,id=>{draft.cat=id;redraw()});paintChips($('fBucket'),BUCKETS,draft.bucket,false,id=>{draft.bucket=id;redraw()});paintChips($('fStatus'),STATUSES,draft.status,false,id=>{draft.status=id;redraw()});paintChips($('fRepeat'),REPEATS,draft.repeat,false,id=>{draft.repeat=id;redraw()})};
   redraw();
@@ -2922,10 +2922,10 @@ function renderBiz(){
   intro.textContent=arr.length?'Tvoje podnikatelské nápady. Ťukni na kartu a doplň, co víš – vše se ukládá samo.':'';
   if(arr.length)list.appendChild(intro);
   if(!arr.length){
-    list.innerHTML=emptyState('💡','Zatím žádný byznys nápad','Zapiš si nápad a postupně doplň, pro koho je a jak vydělá.');
+    list.innerHTML=emptyState('💡','Zatím žádný startup','Zapiš si nápad a postupně doplň, pro koho je a jak vydělá.');
   }
   arr.forEach(b=>list.appendChild(bizCard(b)));
-  const add=document.createElement('button');add.type='button';add.className='biz-add';add.innerHTML='<span aria-hidden="true">+</span> Nový byznys nápad';
+  const add=document.createElement('button');add.type='button';add.className='biz-add';add.innerHTML='<span aria-hidden="true">+</span> Nový startup';
   add.onclick=openBizNewSheet;list.appendChild(add);
 }
 function bizCard(b){
@@ -2988,7 +2988,7 @@ function renderBizDetail(b){
   bizRenderPending=false;
   const bt=bizTasks(b),open=sortTasks(bt.filter(t=>t.status!=='done')),done=bt.filter(t=>t.status==='done');
   const logs=b.log.filter(isLive);
-  let h='<button type="button" class="biz-back" id="bizBack"><span aria-hidden="true">‹</span> Byznys</button>';
+  let h='<button type="button" class="biz-back" id="bizBack"><span aria-hidden="true">‹</span> Startupy</button>';
   h+='<div class="card biz-head">'+
     '<label class="sr-only" for="bf_name">Název</label><input id="bf_name" class="biz-title-in" data-bf="name" value="'+esc(b.name)+'" placeholder="Název" autocomplete="off" enterkeyhint="done">'+
     '<label class="sr-only" for="bf_pitch">O co jde jednou větou</label><textarea id="bf_pitch" class="biz-pitch-in" data-bf="pitch" rows="1" placeholder="O co jde – jednou větou" enterkeyhint="done">'+esc(b.pitch)+'</textarea>'+
@@ -3003,12 +3003,12 @@ function renderBizDetail(b){
   if(b.canvas.next)h+='<button type="button" class="secondary biz-mini" id="bizNextTask">Udělat z dalšího kroku úkol</button>';
   h+='</div>';
   h+='<h2>Úkoly</h2><div class="group" id="bizTaskList"></div>'+
-    '<div class="card biz-addrow"><label class="sr-only" for="bizNewTask">Nový úkol k tomuto byznysu</label><input id="bizNewTask" placeholder="Nový úkol k '+esc(b.name)+'" enterkeyhint="send" autocomplete="off"><button type="button" class="biz-plus" id="bizAddTask" aria-label="Přidat úkol">+</button></div>';
+    '<div class="card biz-addrow"><label class="sr-only" for="bizNewTask">Nový úkol k tomuto startupu</label><input id="bizNewTask" placeholder="Nový úkol k '+esc(b.name)+'" enterkeyhint="send" autocomplete="off"><button type="button" class="biz-plus" id="bizAddTask" aria-label="Přidat úkol">+</button></div>';
   h+='<h2>Nápady a poznámky</h2><div class="card biz-addrow"><label class="sr-only" for="bizNewLog">Nový nápad nebo poznámka</label><textarea id="bizNewLog" rows="1" placeholder="Co tě napadlo? Uloží se s dnešním datem."></textarea><button type="button" class="biz-plus" id="bizAddLog" aria-label="Přidat nápad">+</button></div>'+
     '<div class="group" id="bizLogList"></div>';
   h+='<h2>Čísla (hrubý odhad)</h2><div class="card biz-nums">'+BIZ_NUMBERS.map(n=>{const key='n.'+n.id,id='bf_n_'+n.id;return '<div class="field"><label for="'+id+'">'+esc(n.name)+'</label><input id="'+id+'" data-bf="'+key+'" value="'+esc(bizField(b,key))+'" placeholder="'+esc(n.ph)+'" autocomplete="off" enterkeyhint="done"></div>'}).join('')+'</div>';
   h+='<p class="muted center biz-saved" aria-live="polite">Ukládá se samo'+(itemUpdatedAt(b)?' · '+esc(bizEditedLabel(b)):'')+'</p>';
-  h+='<div class="actions"><button type="button" class="danger" id="bizDelete">Smazat byznys</button></div>';
+  h+='<div class="actions"><button type="button" class="danger" id="bizDelete">Smazat startup</button></div>';
   det.innerHTML=h;
   // tasks
   const tl=$('bizTaskList');
@@ -3055,7 +3055,7 @@ function renderBizDetail(b){
   const nt=$('bizNextTask');if(nt)nt.onclick=()=>{$('bizNewTask').value=b.canvas.next;addT()};
   $('bizDelete').onclick=()=>{
     flushBizSave();b.deleted=true;touch(b);persist();bizOpenId=null;haptic('heavy');renderBiz();
-    toast('Byznys „'+b.name+'“ smazán',{label:'Zpět',fn:()=>{b.deleted=false;touch(b);persist();bizOpenId=b.id;if(view!=='biz')setView('biz');else renderBiz()}});
+    toast('Startup „'+b.name+'“ smazán',{label:'Zpět',fn:()=>{b.deleted=false;touch(b);persist();bizOpenId=b.id;if(view!=='biz')setView('biz');else renderBiz()}});
   };
   det.onfocusout=bizFocusOut;
 }
@@ -3077,7 +3077,7 @@ function bizLogCard(b,e){
 }
 function openBizNewSheet(){
   sheetMode='biz-new';sheetTarget=null;
-  $('sheetTitle').textContent='Nový byznys nápad';
+  $('sheetTitle').textContent='Nový startup';
   $('sheetDelete').hidden=true;
   $('sheetBody').innerHTML='<div class="field"><label for="nbName">Název</label><input id="nbName" placeholder="Např. Aura Cut" autocomplete="off" enterkeyhint="next"></div>'+
     '<div class="field"><label for="nbPitch">O co jde (stačí jedna věta)</label><textarea id="nbPitch" rows="2" placeholder="Např. mobilní barber pro studenty"></textarea></div>';
@@ -3088,9 +3088,9 @@ function openBizNewSheet(){
 function submitBizNew(){
   const name=(($('nbName')&&$('nbName').value)||'').trim(),pitch=(($('nbPitch')&&$('nbPitch').value)||'').trim();
   if(!name){toast('Napiš název');$('nbName')&&$('nbName').focus();return}
-  if(liveBiz().some(x=>fpText(x.name)===fpText(name))){toast('Takový byznys už máš');return}
+  if(liveBiz().some(x=>fpText(x.name)===fpText(name))){toast('Takový startup už máš');return}
   const b=touch(normalizeBiz({id:uid('b'),name,pitch,status:'idea',created:todayISO()}));
-  businesses.push(b);persist();closeSheet();haptic();openBiz(b.id);toast('Byznys vytvořen');
+  businesses.push(b);persist();closeSheet();haptic();openBiz(b.id);toast('Startup vytvořen');
 }
 /* link a task to a business from the task sheet */
 function setTaskBiz(taskId,bizId){
@@ -3637,7 +3637,7 @@ function renderSearch(){
   const nHits=notes.filter(n=>isLive(n)&&hay(n.text+' '+(n.tag||'')).includes(q));
   const bHits=liveBiz().filter(b=>hay([b.name,b.pitch,b.customers].concat(Object.values(b.canvas),Object.values(b.numbers),b.log.filter(isLive).map(e=>e.text)).join(' ')).includes(q));
   const rHits=upcomingRems().concat(reminders.filter(r=>isLive(r)&&r.done)).filter(r=>hay(r.text).includes(q));
-  if(bHits.length)appendGroup(box,'Byznys',bHits.map(b=>bizCard(b)),{boxCls:'biz-results'});
+  if(bHits.length)appendGroup(box,'Startupy',bHits.map(b=>bizCard(b)),{boxCls:'biz-results'});
   if(rHits.length)appendGroup(box,'Připomínky',rHits.map(r=>remCard(r)));
   if(!tHits.length&&!nHits.length&&!bHits.length&&!rHits.length){
     const p=document.createElement('p');p.className='empty';p.textContent='Nic se nenašlo.';box.appendChild(p);return;

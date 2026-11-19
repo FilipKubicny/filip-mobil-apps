@@ -1,5 +1,5 @@
-const CACHE='kompas-v12.3';
-const FILES=['./','index.html','app.js','app.js?v=12.3','style.css','style.css?v=12.3','qr.js','qr.js?v=12.3','manifest.webmanifest','icon-180.png','icon-192.png','icon-512.png','icon-512-maskable.png','favicon.png','icon.svg','fonts/Geist-Variable.woff2'];
+const CACHE='kompas-v12.4';
+const FILES=['./','index.html','app.js','app.js?v=12.4','style.css','style.css?v=12.4','qr.js','qr.js?v=12.4','manifest.webmanifest','icon-180.png','icon-192.png','icon-512.png','icon-512-maskable.png','favicon.png','icon.svg','fonts/Geist-Variable.woff2'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(FILES)).then(()=>self.skipWaiting()))});
 self.addEventListener('activate',e=>{
   e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));
