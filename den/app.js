@@ -21,7 +21,7 @@ const BUCKETS=[
 ];
 const STATUSES=[{id:'open',name:'Otevřené'},{id:'wip',name:'Rozpracované'},{id:'wait',name:'Čeká'},{id:'done',name:'Hotovo'}];
 const REPEATS=[{id:'',name:'Neopakuje se',short:'Neopakuje se'},{id:'daily',name:'Denně',short:'Denně'},{id:'weekly',name:'Týdně',short:'Týdně'},{id:'monthly',name:'Měsíčně',short:'Měsíčně'},{id:'workdays',name:'Pracovní dny',short:'Pracovní dny'}];
-const APP_VERSION=12.4,APP_LABEL='12.4',APP_NAME='Kompas';
+const APP_VERSION=12.5,APP_LABEL='12.5',APP_NAME='Kompas';
 const VIEWS=['dnes','ukoly','biz','dochazka','rems','notes'];
 const BIZ_STATUSES=[{id:'idea',name:'Nápad'},{id:'validating',name:'Ověřuji'},{id:'launching',name:'Rozjíždím'},{id:'running',name:'Běží'},{id:'paused',name:'Odloženo'}];
 const BIZ_CANVAS=[
@@ -140,6 +140,24 @@ const czPeriod=(a,b)=>czDateSp(a)+' – '+czDateSp(b);
 const mins=t=>{if(!t)return null;const p=String(t).split(':');if(p.length<2)return null;return (+p[0])*60+(+p[1])};
 const spanMin=(f,t)=>{const a=mins(f),b=mins(t);if(a==null||b==null)return null;let d=b-a;if(d<0)d+=1440;return d};
 const fmt=m=>{m=Math.round(m||0);const h=Math.floor(m/60),r=m%60;return r?h+' h '+r+' min':h+' h'};
+const spanSum=spans=>(spans||[]).reduce((a,s)=>a+(spanMin(s[0],s[1])||0),0);
+function computeWorked(spans,pause_min,fixed_min){
+  if(fixed_min!=null&&fixed_min!=='')return Math.round(Number(fixed_min)||0);
+  if(spans&&spans.length)return Math.max(0,spanSum(spans)-(pause_min||0));
+  return 0;
+}
+function readPauseMin(id,fallback){
+  const el=$(id);if(!el)return fallback||0;
+  const n=Math.round(Number(String(el.value||'').trim()));
+  return Number.isFinite(n)&&n>=0?n:(fallback||0);
+}
+const fmtPause=m=>{m=Math.round(Number(m)||0);return m<=0?'–':(m<60?m+' min':fmt(m))};
+function todayPauseMin(){
+  if(!$('lunch')||!$('lunch').checked)return 0;
+  const existing=findDay(todayISO());
+  const prev=existing&&(existing.pause_min||0);
+  return prev>0&&prev!==PAUSE?prev:PAUSE;
+}
 const czk=n=>Math.round(n).toLocaleString('cs-CZ')+' Kč';
 const load=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch(e){return d}};
 const save=(k,v)=>{
@@ -232,10 +250,9 @@ function normalizeDay(raw){
   if(fixed_min==null&&raw.hours!=null&&raw.hours!=='')fixed_min=Math.round(Number(raw.hours)*60);
   if(pause_min==null)pause_min=(raw.hours!=null||raw.fixed_min!=null||raw.imported)?0:PAUSE;
   let worked_min=raw.worked_min;
-  if(worked_min==null){
-    if(fixed_min!=null)worked_min=fixed_min;
-    else worked_min=Math.max(0,spans.reduce((a,[f,t])=>a+(spanMin(f,t)||0),0)-(pause_min||0));
-  }
+  if(fixed_min!=null)worked_min=fixed_min;
+  else if(spans.length)worked_min=computeWorked(spans,pause_min||0,null);
+  else if(worked_min==null)worked_min=0;
   return{id:String(raw.id||('d'+String(raw.date).slice(0,10))),date:String(raw.date).slice(0,10),spans,pause_min:pause_min||0,fixed_min:fixed_min!=null?fixed_min:null,worked_min:Math.round(worked_min||0),work:Array.isArray(raw.work)?raw.work.map(String):String(raw.work||'').split('\n').map(s=>s.trim()).filter(Boolean),notes:String(raw.notes||raw.note||'').trim(),areas:Array.isArray(raw.areas)?raw.areas:[],nonbillable,updatedAt:itemUpdatedAt(raw)||0,deleted:!!raw.deleted};
 }
 function normalizeExp(raw){
@@ -440,15 +457,16 @@ function formSpans(){
 function formWorked(){
   if($('nonbill').checked&&!formSpans().length)return 0;
   const spans=formSpans();if(!spans.length)return null;
-  return Math.max(0,spans.reduce((a,[f,t])=>a+(spanMin(f,t)||0),0)-($('lunch').checked?PAUSE:0));
+  return computeWorked(spans,todayPauseMin(),null);
 }
 function updateTotal(){
-  const nb=$('nonbill').checked,w=formWorked(),lunchOn=$('lunch').checked;
+  const nb=$('nonbill').checked,w=formWorked(),pause=todayPauseMin();
+  const pauseTxt=pause?('pauza '+fmtPause(pause)): 'bez pauzy na oběd';
   let html,cls='total';
   if(nb&&(w==null||w===0)){html='Nefakturuje se<small>Den se zapíše, do faktury nepočítá</small>';cls+=' nb'}
-  else if(w==null){html='Odpracováno: –<small>'+(lunchOn?'pauza 30 min se odečte':'bez pauzy na oběd')+'</small>'}
+  else if(w==null){html='Odpracováno: –<small>'+(pause?pauseTxt+' se odečte':pauseTxt)+'</small>'}
   else{
-    html='Odpracováno: '+fmt(w)+(nb?'':' · '+czk(pay(w)))+'<small>'+(lunchOn?'pauza 30 min odečtena':'bez pauzy na oběd')+(nb?' · nefakturuje se':'')+'</small>';
+    html='Odpracováno: '+fmt(w)+(nb?'':' · '+czk(pay(w)))+'<small>'+(pause?pauseTxt+' odečtena':pauseTxt)+(nb?' · nefakturuje se':'')+'</small>';
     if(nb)cls+=' nb';
   }
   $('total').className=cls;$('total').innerHTML=html;
@@ -543,7 +561,7 @@ function collectTodayDay(){
   if(!nb&&w==null&&!hasExp&&!$('work').value.trim())return null;
   if(!nb&&w==null)return null;
   const existing=findDay(date);
-  const pause=$('lunch').checked?PAUSE:0;
+  const pause=todayPauseMin();
   let fixed_min=null,worked=w==null?0:w;
   if(existing&&existing.fixed_min!=null){
     const same=JSON.stringify(spans)===JSON.stringify(existing.spans||[])&&pause===(existing.pause_min||0);
@@ -625,32 +643,49 @@ function fillDaySheet(d){
     if($('dToggleSpan2'))$('dToggleSpan2').textContent=on?'Odebrat druhý čas':'+ Druhý čas';
     $('dFrom2').value=s[1]?s[1][0]:'';$('dTo2').value=s[1]?s[1][1]:'';
   }
-  if($('dLunch'))$('dLunch').checked=d?((d.pause_min||0)>0):true;
+  if($('dPause'))$('dPause').value=String(d&&d.pause_min!=null?d.pause_min:PAUSE);
   if($('dNonbill'))$('dNonbill').checked=!!(d&&d.nonbillable);
   if($('dWork'))$('dWork').value=d?(d.work||[]).join('\n'):'';
   if($('dNotes'))$('dNotes').value=d&&d.notes?d.notes:'';
+  updateDaySheetTotal();
 }
 function collectDayFromSheet(existing){
   const date=($('dDate')&&$('dDate').value)||(existing&&existing.date)||todayISO();
   const spans=[];
   if($('dFrom1')&&$('dFrom1').value&&$('dTo1')&&$('dTo1').value)spans.push([$('dFrom1').value,$('dTo1').value]);
   if($('dSpan2row')&&!$('dSpan2row').hidden&&$('dFrom2')&&$('dFrom2').value&&$('dTo2')&&$('dTo2').value)spans.push([$('dFrom2').value,$('dTo2').value]);
-  const pause=$('dLunch')&&$('dLunch').checked?PAUSE:0;
+  const pause=readPauseMin('dPause',0);
   const nb=!!($('dNonbill')&&$('dNonbill').checked);
   const work=(($('dWork')&&$('dWork').value)||'').split('\n').map(x=>x.trim()).filter(Boolean);
   const notes=(($('dNotes')&&$('dNotes').value)||'').trim();
   const areas=(($('overlay')._draft&&$('overlay')._draft.areas)||(existing&&existing.areas)||[]).slice();
-  let worked=null;
-  if(spans.length)worked=Math.max(0,spans.reduce((a,pair)=>a+(spanMin(pair[0],pair[1])||0),0)-pause);
+  let worked=null,fixed_min=null;
+  if(spans.length)worked=computeWorked(spans,pause,null);
+  else if(existing&&existing.fixed_min!=null){fixed_min=existing.fixed_min;worked=existing.fixed_min}
   else if(nb)worked=0;
-  if(!nb&&worked==null&&!work.length&&!notes)return null;
-  if(!nb&&worked==null)return null;
-  let fixed_min=null;
-  if(existing&&existing.fixed_min!=null){
+  if(existing&&existing.fixed_min!=null&&spans.length){
     const same=JSON.stringify(spans)===JSON.stringify(existing.spans||[])&&pause===(existing.pause_min||0);
     if(same){fixed_min=existing.fixed_min;worked=existing.fixed_min}
   }
+  if(!nb&&worked==null&&!work.length&&!notes)return null;
+  if(!nb&&worked==null)return null;
   return normalizeDay({id:(existing||{}).id||uid('d'),date,spans,pause_min:pause,fixed_min,worked_min:worked==null?0:worked,work,notes,nonbillable:nb,areas,deleted:false});
+}
+function updateDaySheetTotal(){
+  const el=$('dTotal');if(!el)return;
+  const spans=[];
+  if($('dFrom1')&&$('dFrom1').value&&$('dTo1')&&$('dTo1').value)spans.push([$('dFrom1').value,$('dTo1').value]);
+  if($('dSpan2row')&&!$('dSpan2row').hidden&&$('dFrom2')&&$('dFrom2').value&&$('dTo2')&&$('dTo2').value)spans.push([$('dFrom2').value,$('dTo2').value]);
+  const pause=readPauseMin('dPause',0),nb=!!($('dNonbill')&&$('dNonbill').checked);
+  let cls='total',html;
+  if(nb&&!spans.length){html='Nefakturuje se<small>Den se zapíše, do faktury nepočítá</small>';cls+=' nb'}
+  else if(!spans.length){html='Odpracováno: –<small>'+(pause?('pauza '+fmtPause(pause)+' se odečte'):'bez pauzy na oběd')+'</small>'}
+  else{
+    const w=computeWorked(spans,pause,null);
+    html='Odpracováno: '+fmt(w)+(nb?'':' · '+czk(pay(w)))+'<small>'+(pause?('pauza '+fmtPause(pause)+' odečtena'):'bez pauzy na oběd')+(nb?' · nefakturuje se':'')+'</small>';
+    if(nb)cls+=' nb';
+  }
+  el.className=cls;el.innerHTML=html;
 }
 function paintAreaPicker(el,selected){
   if(!el)return;
@@ -679,8 +714,9 @@ function openDaySheet(date,day){
     '<div class="row field"><div><label for="dFrom1">Od</label><input type="time" id="dFrom1" step="300"></div><div><label for="dTo1">Do</label><input type="time" id="dTo1" step="300"></div></div>'+
     '<div class="row field" id="dSpan2row" hidden><div><label for="dFrom2">Od (druhý čas)</label><input type="time" id="dFrom2" step="300"></div><div><label for="dTo2">Do</label><input type="time" id="dTo2" step="300"></div></div>'+
     '<div class="actions tight"><button type="button" class="secondary" id="dToggleSpan2">+ Druhý čas</button></div>'+
-    '<label class="check"><input type="checkbox" id="dLunch" checked> Odečíst 30 min pauzu na oběd</label>'+
+    '<div class="field"><label for="dPause">Pauza na oběd (min)</label><input type="number" id="dPause" min="0" step="5" inputmode="numeric" value="'+PAUSE+'"></div>'+
     '<label class="check"><input type="checkbox" id="dNonbill"> Nefakturuje se / mimo SAPEKOR</label>'+
+    '<div class="total" id="dTotal">Odpracováno: –<small>pauza se odečte od odpracovaného času</small></div>'+
     '<div class="field" style="margin-top:12px"><label for="dWork">Na čem jsem pracoval</label><textarea id="dWork" rows="4" placeholder="Každá činnost na nový řádek"></textarea></div>'+
     '<div class="field"><label for="dNotes">Poznámka k dni</label><textarea id="dNotes" rows="2"></textarea></div>'+
     '<div class="field"><span class="lbl">Oblasti</span><div class="chips" id="dAreas"></div></div>';
@@ -692,7 +728,8 @@ function openDaySheet(date,day){
   $('dPrev').onclick=()=>go(addDays($('dDate').value||iso,-1));
   $('dNext').onclick=()=>go(addDays($('dDate').value||iso,1));
   $('dDate').onchange=()=>{if($('dDate').value)go($('dDate').value)};
-  $('dToggleSpan2').onclick=()=>{const on=$('dSpan2row').hidden;$('dSpan2row').hidden=!on;$('dToggleSpan2').textContent=on?'Odebrat druhý čas':'+ Druhý čas';if(!on){$('dFrom2').value='';$('dTo2').value=''}};
+  $('dToggleSpan2').onclick=()=>{const on=$('dSpan2row').hidden;$('dSpan2row').hidden=!on;$('dToggleSpan2').textContent=on?'Odebrat druhý čas':'+ Druhý čas';if(!on){$('dFrom2').value='';$('dTo2').value=''};updateDaySheetTotal()};
+  ['dFrom1','dTo1','dFrom2','dTo2','dPause','dNonbill'].forEach(id=>{const el=$(id);if(el){el.addEventListener('input',updateDaySheetTotal);el.addEventListener('change',updateDaySheetTotal)}});
 }
 function openRemSheet(r){
   sheetMode='rem';sheetTarget=r||null;
@@ -1389,10 +1426,10 @@ function renderDochazka(){
   if($('pickDay')&&editDayDate)$('pickDay').value=editDayDate;
   const list=days.filter(d=>isLive(d)&&d.date.startsWith(monthYM)).sort((a,b)=>a.date.localeCompare(b.date));
   const exp=expenses.filter(e=>isLive(e)&&e.date.startsWith(monthYM)).sort((a,b)=>a.date.localeCompare(b.date));
-  const billMin=list.reduce((a,d)=>a+dayMin(d),0),expSum=exp.reduce((a,e)=>a+e.czk,0);
+  const billMin=list.reduce((a,d)=>a+dayMin(d),0),expSum=exp.reduce((a,e)=>a+e.czk,0),pauseMin=list.reduce((a,d)=>a+(d.pause_min||0),0);
   $('monthMetrics').innerHTML=
     metric(fmt(billMin),'Odpracováno')+metric(czk(pay(billMin)),'Práce ('+settings.rate+' Kč/h)')+
-    metric(czk(expSum),'Ostatní náklady')+metric(czk(pay(billMin)+expSum),'Celkem k fakturaci');
+    metric(fmt(pauseMin),'Pauzy')+metric(czk(expSum),'Ostatní náklady')+metric(czk(pay(billMin)+expSum),'Celkem k fakturaci');
   const wds=workdaysInMonth(monthYM);
   const hols=Object.entries(holidaysInYear(y)).filter(([s])=>s.startsWith(monthYM)).sort((a,b)=>a[0].localeCompare(b[0]));
   const liveDays=days.filter(isLive);const startTrack=liveDays.length?liveDays.map(d=>d.date).sort()[0]:monthYM+'-01';
@@ -1409,10 +1446,11 @@ function renderDochazka(){
   list.forEach(d=>{
     const b=document.createElement('button');b.type='button';b.className='day'+(d.nonbillable?' nb':'');
     const when=(d.spans||[]).map(([f,t])=>f+'–'+t).join(', ');
+    const pauseTxt=(d.pause_min||0)>0?'pauza '+fmtPause(d.pause_min):'';
     const areas=(d.areas||[]).map(a=>AREAS[a]||a).filter(Boolean).join(', ');
     const title=d.work.length?d.work.join(' · '):(d.nonbillable?'Mimo SAPEKOR':'Bez popisu');
     b.innerHTML='<div class="lead"><b>'+esc(czDateLong(d.date))+'</b><span class="meta">'+(d.nonbillable?'nefakturuje se':fmt(d.worked_min)+' · '+czk(pay(dayMin(d))))+'</span></div>'+
-      '<div class="title">'+esc(title)+'</div>'+(when||areas||d.notes?'<div class="detail">'+esc([when,areas,d.notes].filter(Boolean).join(' · '))+'</div>':'');
+      '<div class="title">'+esc(title)+'</div>'+(when||pauseTxt||areas||d.notes?'<div class="detail">'+esc([when,pauseTxt,areas,d.notes].filter(Boolean).join(' · '))+'</div>':'');
     b.onclick=()=>openDaySheet(d.date,d);
     box.appendChild(b);
   });
@@ -1435,10 +1473,12 @@ function renderDochazka(){
   const p=period();
   const openDays=days.filter(d=>isLive(d)&&inPeriod(d.date,p)&&dayMin(d)>0).sort((a,b)=>a.date.localeCompare(b.date));
   const openMin=openDays.reduce((a,d)=>a+dayMin(d),0);
+  const openPause=days.filter(d=>isLive(d)&&inPeriod(d.date,p)).reduce((a,d)=>a+(d.pause_min||0),0);
   const openExp=expenses.filter(e=>isLive(e)&&inPeriod(e.date,p)).sort((a,b)=>a.date.localeCompare(b.date));
   const openExpSum=openExp.reduce((a,e)=>a+e.czk,0),total=pay(openMin)+openExpSum;
   let html='<p class="muted" style="margin:0 0 10px">Období '+esc(czPeriod(p.start,p.end))+(p.end<='2026-11-30'&&settings.billedUntil<'2026-11-30'?' · pak už celé kalendářní měsíce':'')+', bez DPH.</p>';
   html+='<div class="rowline"><div>Práce, '+czCount(openDays.length,'den','dny','dnů')+' zatím</div><div class="amt">'+fmt(openMin)+' × '+settings.rate+' Kč<br>'+czk(pay(openMin))+'</div></div>';
+  html+='<div class="rowline"><div>Pauzy celkem</div><div class="amt">'+fmt(openPause)+'</div></div>';
   openExp.forEach(e=>{html+='<div class="rowline"><div>'+esc(e.what)+'<div class="muted">'+esc(czDateLong(e.date))+'</div></div><div class="amt">'+czk(e.czk)+'</div></div>'});
   html+='<div class="bill-total"><span>Zatím celkem</span><span>'+czk(total)+'</span></div>';
   html+='<div class="actions"><button type="button" class="secondary" id="markBilled">Období je vyfakturované</button></div>';
@@ -3187,7 +3227,7 @@ function quickWhenLabel(p){
   return d+(p.time?' v '+p.time:'');
 }
 
-try{window.__kompas={parseQuick,version:APP_LABEL}}catch(e){}
+try{window.__kompas={parseQuick,version:APP_LABEL,timesheetHtml,timesheetRows,timesheetCsv,computeWorked,fmtPause,period}}catch(e){}
 /* ---------- Quick add sheet (FAB) ---------- */
 let quickKind='auto';
 function openQuickAdd(preset){
@@ -3650,44 +3690,49 @@ function timesheetRows(p){
   const list=days.filter(d=>isLive(d)&&inPeriod(d.date,p)).sort((a,b)=>a.date.localeCompare(b.date));
   const exp=expenses.filter(e=>isLive(e)&&inPeriod(e.date,p)).sort((a,b)=>a.date.localeCompare(b.date));
   const billMin=list.reduce((a,d)=>a+dayMin(d),0),expSum=exp.reduce((a,e)=>a+e.czk,0),workCzk=pay(billMin);
-  return {p,list,exp,billMin,expSum,workCzk,total:workCzk+expSum,rate:settings.rate};
+  const pauseMin=list.reduce((a,d)=>a+(d.pause_min||0),0);
+  return {p,list,exp,billMin,pauseMin,expSum,workCzk,total:workCzk+expSum,rate:settings.rate};
 }
 function timesheetHtml(ts){
   const rows=ts.list.map(d=>{
     const when=(d.spans&&d.spans.length)?d.spans.map(([f,t])=>f+'–'+t).join(', '):'';
     const work=(d.work||[]).join('; ');
-    return '<tr><td>'+esc(czDate(d.date))+'</td><td>'+esc(when)+'</td><td>'+esc(d.nonbillable?'0 (nefakt.)':fmt(dayMin(d)))+'</td><td>'+esc(work||d.notes||'')+'</td></tr>';
+    const pause=(d.pause_min||0)>0?fmtPause(d.pause_min):'–';
+    return '<tr><td>'+esc(czDate(d.date))+'</td><td>'+esc(when)+'</td><td class="num">'+esc(pause)+'</td><td class="num">'+esc(d.nonbillable?'0 (nefakt.)':fmt(dayMin(d)))+'</td><td>'+esc(work||d.notes||'')+'</td></tr>';
   }).join('');
-  const exprows=ts.exp.map(e=>'<tr><td>'+esc(czDate(e.date))+'</td><td colspan="2">'+esc(e.what)+'</td><td>'+esc(czk(e.czk))+'</td></tr>').join('');
+  const exprows=ts.exp.map(e=>'<tr><td>'+esc(czDate(e.date))+'</td><td colspan="2">'+esc(e.what)+'</td><td class="num">'+esc(czk(e.czk))+'</td></tr>').join('');
   return '<!doctype html><html lang="cs"><head><meta charset="utf-8"><title>Výkaz SAPEKOR '+esc(czPeriod(ts.p.start,ts.p.end))+'</title>'+
-    '<style>body{font-family:system-ui,sans-serif;color:#111;margin:24px;font-size:13px}h1{font-size:20px;margin:0 0 4px}h2{font-size:15px;margin:18px 0 8px}.meta{color:#444;margin:0 0 16px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:6px 8px;text-align:left}th{background:#f3f3f3}td.num,th.num{text-align:right}.tot{font-weight:700}@media print{body{margin:12mm}}</style></head><body>'+
+    '<style>body{font-family:system-ui,sans-serif;color:#111;margin:24px;font-size:13px}h1{font-size:20px;margin:0 0 4px}h2{font-size:15px;margin:18px 0 8px}.meta{color:#444;margin:0 0 16px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:5px 7px;text-align:left;vertical-align:top}th{background:#f3f3f3}td.num,th.num{text-align:right;white-space:nowrap}.tot{font-weight:700}@media print{body{margin:12mm}}</style></head><body>'+
     '<h1>SAPEKOR · výkaz práce</h1>'+
-    '<p class="meta">Období '+esc(czPeriod(ts.p.start,ts.p.end))+'<br>Sazba '+ts.rate+' Kč/h · částky bez DPH</p>'+
-    '<h2>Odpracované dny</h2><table><thead><tr><th>Den</th><th>Čas</th><th>Hodiny</th><th>Popis</th></tr></thead><tbody>'+
-    (rows||'<tr><td colspan="4">Žádný zápis v období</td></tr>')+'</tbody></table>'+
-    '<h2>Výdaje</h2><table><thead><tr><th>Den</th><th colspan="2">Popis</th><th>Částka</th></tr></thead><tbody>'+
+    '<p class="meta">Období '+esc(czPeriod(ts.p.start,ts.p.end))+'<br>Sazba '+ts.rate+' Kč/h · částky bez DPH<br>Odpracováno '+esc(fmt(ts.billMin))+' · Pauzy celkem: '+esc(fmt(ts.pauseMin||0))+' · Celkem '+esc(czk(ts.total))+'</p>'+
+    '<h2>Odpracované dny</h2><table><thead><tr><th>Den</th><th>Čas</th><th class="num">Pauza</th><th class="num">Hodiny</th><th>Popis</th></tr></thead><tbody>'+
+    (rows||'<tr><td colspan="5">Žádný zápis v období</td></tr>')+'</tbody></table>'+
+    '<h2>Výdaje</h2><table><thead><tr><th>Den</th><th colspan="2">Popis</th><th class="num">Částka</th></tr></thead><tbody>'+
     (exprows||'<tr><td colspan="4">Žádné výdaje</td></tr>')+'</tbody></table>'+
     '<h2>Souhrn</h2><table><tr><td>Odpracováno</td><td class="num">'+esc(fmt(ts.billMin))+'</td></tr>'+
+    '<tr><td>Pauzy celkem</td><td class="num">'+esc(fmt(ts.pauseMin||0))+'</td></tr>'+
     '<tr><td>Práce ('+ts.rate+' Kč/h)</td><td class="num">'+esc(czk(ts.workCzk))+'</td></tr>'+
     '<tr><td>Výdaje</td><td class="num">'+esc(czk(ts.expSum))+'</td></tr>'+
     '<tr class="tot"><td>Celkem bez DPH</td><td class="num">'+esc(czk(ts.total))+'</td></tr></table></body></html>';
 }
 function csvEsc(s){const t=String(s??'');return /[;"\n]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t}
 function timesheetCsv(ts){
-  const lines=[['Den','Od','Do','Hodiny','Nefakturovat','Popis','Výdaj','Částka výdaje']];
+  const lines=[['Den','Od','Do','Pauza','Hodiny','Nefakturovat','Popis','Výdaj','Částka výdaje']];
   ts.list.forEach(d=>{
     const from=d.spans&&d.spans[0]?d.spans[0][0]:'';
     const to=d.spans&&d.spans[0]?d.spans[0][1]:'';
     const hours=d.nonbillable?0:(dayMin(d)/60);
-    lines.push([d.date,from,to,String(hours).replace('.',','),d.nonbillable?'ano':'',(d.work||[]).join('; '),'','']);
+    const pause=(d.pause_min||0)>0?fmtPause(d.pause_min):'–';
+    lines.push([d.date,from,to,pause,String(hours).replace('.',','),d.nonbillable?'ano':'',(d.work||[]).join('; '),'','']);
   });
-  ts.exp.forEach(e=>lines.push([e.date,'','','','','',e.what,String(e.czk)]));
+  ts.exp.forEach(e=>lines.push([e.date,'','','','','','',e.what,String(e.czk)]));
   lines.push([]);
-  lines.push(['Sazba Kč/h','','','','',String(ts.rate)]);
-  lines.push(['Hodiny celkem','','','', '',String(ts.billMin/60).replace('.',',')]);
-  lines.push(['Práce bez DPH','','','','',String(ts.workCzk)]);
-  lines.push(['Výdaje','','','','',String(ts.expSum)]);
-  lines.push(['Celkem bez DPH','','','','',String(ts.total)]);
+  lines.push(['Sazba Kč/h','','','','','',String(ts.rate)]);
+  lines.push(['Hodiny celkem','','','','','',String(ts.billMin/60).replace('.',',')]);
+  lines.push(['Pauzy celkem','','','','','',fmt(ts.pauseMin||0)]);
+  lines.push(['Práce bez DPH','','','','','',String(ts.workCzk)]);
+  lines.push(['Výdaje','','','','','',String(ts.expSum)]);
+  lines.push(['Celkem bez DPH','','','','','',String(ts.total)]);
   return '\uFEFF'+lines.map(r=>r.map(csvEsc).join(';')).join('\n');
 }
 function openTimesheetPrint(){
