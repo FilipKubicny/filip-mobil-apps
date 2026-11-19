@@ -21,7 +21,19 @@ const BUCKETS=[
 ];
 const STATUSES=[{id:'open',name:'Otevřené'},{id:'wip',name:'Rozpracované'},{id:'wait',name:'Čeká'},{id:'done',name:'Hotovo'}];
 const REPEATS=[{id:'',name:'Neopakuje se',short:'Neopakuje se'},{id:'daily',name:'Denně',short:'Denně'},{id:'weekly',name:'Týdně',short:'Týdně'},{id:'monthly',name:'Měsíčně',short:'Měsíčně'},{id:'workdays',name:'Pracovní dny',short:'Pracovní dny'}];
-const APP_VERSION=12.2,APP_LABEL='12.2',APP_NAME='Kompas';
+const APP_VERSION=12.3,APP_LABEL='12.3',APP_NAME='Kompas';
+const VIEWS=['dnes','ukoly','biz','dochazka','rems','notes'];
+const BIZ_STATUSES=[{id:'idea',name:'Nápad'},{id:'validating',name:'Ověřuji'},{id:'launching',name:'Rozjíždím'},{id:'running',name:'Běží'},{id:'paused',name:'Odloženo'}];
+const BIZ_CANVAS=[
+  {id:'problem',name:'Problém',ph:'Jaký problém nebo potřebu lidí to řeší?'},
+  {id:'solution',name:'Řešení',ph:'Co přesně nabízíš? Jak to bude fungovat?'},
+  {id:'customers',name:'Zákazníci',ph:'Kdo to bude kupovat? Čím konkrétněji, tím líp.'},
+  {id:'revenue',name:'Jak vydělá',ph:'Za co a kolik budou lidi platit? Jednorázově, nebo pravidelně?'},
+  {id:'costs',name:'Náklady',ph:'Co tě to bude stát – vybavení, nájem, reklama, čas…'},
+  {id:'competition',name:'Konkurence',ph:'Kdo už to dělá a čím budeš jiný nebo lepší?'},
+  {id:'next',name:'Další krok',ph:'Co uděláš jako první? Např. zeptat se 10 lidí, jestli by to chtěli.'}
+];
+const BIZ_NUMBERS=[{id:'invest',name:'Odhad investice',ph:'Např. 50 000 Kč'},{id:'price',name:'Cena pro zákazníka',ph:'Např. 300 Kč za střih'},{id:'monthly',name:'Měsíční příjem (odhad)',ph:'Např. 20 000 Kč'}];
 try{localStorage.removeItem('den_lock')}catch(e){}
 try{localStorage.removeItem('den_pending_mails')}catch(e){}
 const CAT_REPAIR={'432daf02':'sva','7e50a6ef':'sva','97d85896':'sva','c47f2c69':'zam','59a4c2fe':'zam','b39cb988':'sva','727076df':'sva','83367aa7':'fre','6a18e6c6':'fre','79486842':'fre','83549cb7':'lin','3ef16c57':'ost','6443a152':'ost','738ca1f6':'fre','66c017e9':'zam','a1b882a7':'zam','249f1330':'zam','9c9d5258':'zam','354dbdf3':'zam','b9e025f0':'pul','4185f791':'pul','fbe7d7cd':'pul','aab0cba9':'sva','c6bfbc8d':'sva','4aeb6c08':'sva','a3d38c38':'sva','6e49be28':'ost','5b60e232':'ost','ee532219':'lin','deafdb98':'lin','527a770f':'inv','f19d2292':'inv','f2e4f1b8':'sva','875b1851':'fre','c0e70d5':'inv','802e913d':'ost'};
@@ -263,6 +275,46 @@ function normalizeNote(raw){
   if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(at))at=nowStamp();
   return{id:String(raw.id||stableId('n',fpText(text)+'|'+at)),text,tag,at,updated:String(raw.updated||at).slice(0,16),updatedAt:itemUpdatedAt(raw)||0,deleted:!!raw.deleted};
 }
+/* ---------- Byznys: data model (keep identical to den_store.py normalize_biz) ---------- */
+function bizStr(v){return String(v==null?'':v).trim()}
+function normalizeBizLog(raw){
+  if(!raw||typeof raw!=='object')return null;
+  const text=bizStr(raw.text||raw.t);
+  if(!text&&!raw.deleted)return null;
+  const at=String(raw.at||'').replace(' ','T').slice(0,16);
+  return {id:String(raw.id||stableId('l',fpText(text)+'|'+at)),text,at,updatedAt:itemUpdatedAt(raw)||0,deleted:!!raw.deleted};
+}
+function cpCmp(a,b){a=String(a);b=String(b);return a<b?-1:a>b?1:0}
+function sortBizLog(list){return list.slice().sort((a,b)=>cpCmp(b.at,a.at)||cpCmp(a.id,b.id))}
+function normalizeBiz(raw){
+  if(!raw||typeof raw!=='object')return null;
+  const name=bizStr(raw.name||raw.title);if(!name)return null;
+  const c=raw.canvas&&typeof raw.canvas==='object'?raw.canvas:{};
+  const nums=raw.numbers&&typeof raw.numbers==='object'?raw.numbers:{};
+  const status=BIZ_STATUSES.some(x=>x.id===raw.status)?raw.status:'idea';
+  const seen=new Set(),log=[];
+  (Array.isArray(raw.log)?raw.log:[]).forEach(x=>{const n=normalizeBizLog(x);if(n&&!seen.has(n.id)){seen.add(n.id);log.push(n)}});
+  const taskIds=[];
+  (Array.isArray(raw.taskIds)?raw.taskIds:[]).forEach(t=>{const s=String(t||'');if(s&&!taskIds.includes(s))taskIds.push(s)});
+  const canvas={};['problem','solution','revenue','costs','competition','next'].forEach(k=>canvas[k]=bizStr(c[k]));
+  const numbers={};['invest','price','monthly'].forEach(k=>numbers[k]=bizStr(nums[k]));
+  return {id:String(raw.id||stableId('b',fpText(name))),name,pitch:bizStr(raw.pitch),status,customers:bizStr(raw.customers),canvas,numbers,log:sortBizLog(log),taskIds,created:String(raw.created||'').slice(0,10),updatedAt:itemUpdatedAt(raw)||0,deleted:!!raw.deleted};
+}
+function mergeBizPair(a,b){
+  const w=betterCopy(a,b),o=w===a?b:a;
+  const bag=new Map();
+  (w.log||[]).concat(o.log||[]).forEach(e=>{const cur=bag.get(e.id);bag.set(e.id,cur?betterCopy(cur,e):e)});
+  return Object.assign({},w,{log:sortBizLog(Array.from(bag.values()))});
+}
+function mergeBizLists(){
+  const bag=new Map(),order=[];
+  Array.from(arguments).forEach(list=>(list||[]).forEach(raw=>{
+    const b=normalizeBiz(raw);if(!b)return;
+    if(!bag.has(b.id)){bag.set(b.id,b);order.push(b.id)}
+    else bag.set(b.id,mergeBizPair(bag.get(b.id),b));
+  }));
+  return order.map(k=>bag.get(k));
+}
 function isIOS(){
   const ua=navigator.userAgent||'';
   return /iPhone|iPad|iPod/.test(ua)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
@@ -294,9 +346,10 @@ let expenses=(boot.expenses||[]).map(normalizeExp).filter(Boolean);
 let invoices=(boot.invoices||[]).map(normalizeExp).filter(Boolean);
 let reminders=(boot.reminders||[]).map(normalizeRem).filter(Boolean);
 let notes=(boot.notes||[]).map(normalizeNote).filter(Boolean);
+let businesses=mergeBizLists(load('den_businesses',[]));
 let settings=Object.assign(defaultSettings(),boot.settings||{});
 var syncFirstMerged=false,syncReady=false,syncTimer=0,syncBusy=false,syncApplying=false,syncSha=null,syncRemoteHash=null,syncRemoteAt=null;
-const persist=()=>{save('den_tasks',tasks);save('den_days',days);save('den_expenses',expenses);save('den_invoices',invoices);save('den_reminders',reminders);save('den_notes',notes);save('den_settings',settings);persistCats();scheduleSync()};
+const persist=()=>{save('den_tasks',tasks);save('den_days',days);save('den_expenses',expenses);save('den_invoices',invoices);save('den_reminders',reminders);save('den_notes',notes);save('den_businesses',businesses);save('den_settings',settings);persistCats();scheduleSync()};
 function isLive(x){return !!(x&&!x.deleted)}
 function itemUpdatedAt(x){if(!x)return 0;const v=x.updatedAt!=null?x.updatedAt:x.updated;const n=Number(v);return Number.isFinite(n)?n:0}
 function touch(x){if(!x||typeof x!=='object')return x;const n=Date.now();x.updatedAt=n;x.updated=n;return x}
@@ -327,16 +380,23 @@ function refreshLists(){
   if(searchActive()){renderSearch();return}
   if(view==='dnes')renderDnes();
   if(view==='ukoly')renderTasks();
+  if(view==='biz')renderBiz();
   if(view==='dochazka')renderDochazka();
   if(view==='rems')renderRems();
   if(view==='notes')renderNotes();
 }
-function viewTitle(v){return ({dnes:'Dnes',ukoly:'Úkoly',dochazka:'Docházka',rems:'Připomínky',notes:'Poznámky'})[v||view]||APP_NAME}
+function viewTitle(v){
+  v=v||view;
+  if(v==='biz'&&bizOpenId){const b=bizById(bizOpenId);if(b)return b.name}
+  return ({dnes:'Dnes',ukoly:'Úkoly',biz:'Byznys',dochazka:'Docházka',rems:'Připomínky',notes:'Poznámky'})[v]||APP_NAME;
+}
 function syncTitle(){
   const name=viewTitle();
   const compact=document.documentElement.classList.contains('compact');
   if($('navTitle'))$('navTitle').textContent=compact?name:APP_NAME;
-  if($('largeTitle'))$('largeTitle').innerHTML=esc(name)+' <span class="ver" id="appVer">verze '+APP_LABEL+'</span>';
+  const big=view==='biz'?'Byznys':name;
+  document.body.classList.toggle('biz-detail-on',view==='biz'&&!!bizOpenId);
+  if($('largeTitle'))$('largeTitle').innerHTML=esc(big)+' <span class="ver" id="appVer">verze '+APP_LABEL+'</span>';
 }
 function setupCompactHeader(){
   if(setupCompactHeader._on)return;
@@ -351,13 +411,19 @@ function setupCompactHeader(){
   onscroll();
 }
 function setView(v){
+  if(view==='biz'&&v!=='biz')flushBizSave();
+  if(v===view&&v==='biz'&&bizOpenId){closeBiz();return}
+  const changed=v!==view;
   view=v;
-  document.querySelectorAll('.tabbar button, #appSidebar .sb-nav button').forEach(b=>b.classList.toggle('on',b.dataset.view===v));
+  document.querySelectorAll('.tabbar button').forEach(b=>{const on=b.dataset.view===v||(v==='rems'&&b.dataset.view==='dnes');b.classList.toggle('on',on);if(on)b.setAttribute('aria-selected','true');else b.setAttribute('aria-selected','false')});
+  document.querySelectorAll('#appSidebar .sb-nav button').forEach(b=>b.classList.toggle('on',b.dataset.view===v));
   syncTitle();
   if(searchActive()){renderSearch();return}
-  ['dnes','ukoly','dochazka','rems','notes'].forEach(id=>$('view-'+id).hidden=v!==id);
+  VIEWS.forEach(id=>$('view-'+id).hidden=v!==id);
+  if(changed)window.scrollTo(0,0);
   if(v==='dnes')renderDnes();
   if(v==='ukoly')renderTasks();
+  if(v==='biz')renderBiz();
   if(v==='dochazka')renderDochazka();
   if(v==='rems')renderRems();
   if(v==='notes')renderNotes();
@@ -690,7 +756,7 @@ function toggleDone(t){
   if(t.repeat){
     const nd=nextDue(t.due||todayISO(),t.repeat);
     if(nd){
-      spawned=normalizeTask({id:uid('t'),text:t.text,cat:t.cat,bucket:t.bucket,note:t.note,status:'open',due:nd,repeat:t.repeat,created:todayISO()});
+      spawned=touch(normalizeTask({id:uid('t'),text:t.text,cat:t.cat,bucket:t.bucket,note:t.note,status:'open',due:nd,repeat:t.repeat,created:todayISO()}));
       tasks.splice(idx>=0?idx+1:tasks.length,0,spawned);
     }
   }
@@ -708,6 +774,7 @@ function taskCard(t,opts){
   if(t.due)meta.push('<span class="meta-due '+(isOverdue(t)?'overdue':isDueToday(t)?'due':'')+'">'+esc(dueLabel(t))+'</span>');
   if(t.repeat)meta.push('<span class="meta-rep">'+esc(repeatLabel(t.repeat))+'</span>');
   if(t.from==='bot')meta.push('<span class="meta-bot">od IS BOTa</span>');
+  if(!(opts&&opts.hideBiz)){const bz=bizForTask(t.id);if(bz)meta.push('<span class="meta-biz">'+esc(bz.name)+'</span>')}
   d.innerHTML='<button type="button" class="chk'+(t.status==='done'?' on':'')+'" aria-label="Hotovo">'+(t.status==='done'?'✓':'')+'</button>'+
     '<div class="body"><div class="ttext">'+esc(t.text)+'</div>'+(t.note?'<div class="tnote">'+esc(t.note)+'</div>':'')+
     '<div class="tmeta">'+meta.join('')+'</div></div>';
@@ -859,6 +926,8 @@ function paintCatPicker(el,value,onpick){
 function openTaskSheet(task){
   sheetMode='task';sheetTarget=task||null;
   const draft=task?{text:task.text,cat:task.cat,bucket:task.bucket,status:task.status,note:task.note||'',due:task.due||'',repeat:task.repeat||''}:{text:'',cat:'ost',bucket:view==='ukoly'&&taskTab!=='done'&&taskTab!=='all'?taskTab:'tomorrow',status:'open',note:'',due:'',repeat:''};
+  draft.biz=task?((bizForTask(task.id)||{}).id||''):'';
+  const bizOpts=liveBiz().map(b=>({id:b.id,name:b.name}));
   $('sheetTitle').textContent=task?'Upravit úkol':'Nový úkol';
   $('sheetDelete').hidden=!task;
   $('sheetBody').innerHTML='<div class="field"><label for="fText">Úkol</label><textarea id="fText" rows="3" placeholder="Co je potřeba udělat">'+esc(draft.text)+'</textarea></div>'+
@@ -867,8 +936,9 @@ function openTaskSheet(task){
     '<div class="field"><span class="lbl">Stav</span><div class="chips" id="fStatus"></div></div>'+
     '<div class="field"><label for="fDue">Termín</label><input type="date" id="fDue" value="'+esc(draft.due||'')+'"></div>'+
     '<div class="field"><span class="lbl">Opakování</span><div class="chips" id="fRepeat"></div></div>'+
+    (bizOpts.length?'<div class="field"><span class="lbl">Byznys</span><div class="chips" id="fBiz"></div></div>':'')+
     '<div class="field"><label for="fNote">Poznámka</label><textarea id="fNote" rows="2" placeholder="Volitelná poznámka">'+esc(draft.note)+'</textarea></div>';
-  const redraw=()=>{paintCatPicker($('fCat'),draft.cat,id=>{draft.cat=id;redraw()});paintChips($('fBucket'),BUCKETS,draft.bucket,false,id=>{draft.bucket=id;redraw()});paintChips($('fStatus'),STATUSES,draft.status,false,id=>{draft.status=id;redraw()});paintChips($('fRepeat'),REPEATS,draft.repeat,false,id=>{draft.repeat=id;redraw()})};
+  const redraw=()=>{if($('fBiz'))paintChips($('fBiz'),[{id:'',name:'Žádný'}].concat(bizOpts),draft.biz,false,id=>{draft.biz=id;redraw()});paintCatPicker($('fCat'),draft.cat,id=>{draft.cat=id;redraw()});paintChips($('fBucket'),BUCKETS,draft.bucket,false,id=>{draft.bucket=id;redraw()});paintChips($('fStatus'),STATUSES,draft.status,false,id=>{draft.status=id;redraw()});paintChips($('fRepeat'),REPEATS,draft.repeat,false,id=>{draft.repeat=id;redraw()})};
   redraw();
   $('overlay').dataset.draft=JSON.stringify(draft);
   $('overlay')._draft=draft;
@@ -883,6 +953,7 @@ $('overlay').addEventListener('click',e=>{if(e.target===$('overlay'))closeSheet(
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(!$('importOverlay').hidden)closeImportSheet();else if(!$('overlay').hidden)closeSheet()}});
 $('sheetSave').onclick=()=>{
   if(sheetMode==='quick'){submitQuickAdd();return}
+  if(sheetMode==='biz-new'){submitBizNew();return}
   if(sheetMode==='device-link'){closeSheet();return}
   if(sheetMode==='pair-accept'){submitPairAccept();return}
   if(sheetMode==='pair-share'){closeSheet();return}
@@ -911,8 +982,8 @@ $('sheetSave').onclick=()=>{
   if(sheetMode==='invoice'){
     const date=$('invDate').value,what=$('invWhat').value.trim(),cz=Number($('invCzk').value);
     if(!date||!what||!isFinite(cz)){toast('Doplň datum, popis a částku');return}
-    invoices.push({id:uid('i'),date,what,czk:cz});
-    if($('invClose').checked){const p=period();settings.billedUntil=p.end}
+    invoices.push(touch(normalizeExp({id:uid('i'),date,what,czk:cz})));
+    if($('invClose').checked){const p=period();settings.billedUntil=p.end;touch(settings)}
     persist();closeSheet();renderDochazka();toast('Faktura zapsána');
     return;
   }
@@ -921,7 +992,7 @@ $('sheetSave').onclick=()=>{
     const bucket=draft.bucket||'tomorrow';
     const text=(draft.text||'').trim();if(!text){toast('Napiš úkol');return}
     const note=draft.tag?draft.tag:'';
-    tasks.push(normalizeTask({id:uid('t'),text,cat:draft.cat||'ost',bucket,status:'open',note,created:todayISO()}));
+    tasks.push(touch(normalizeTask({id:uid('t'),text,cat:draft.cat||'ost',bucket,status:'open',note,created:todayISO()})));
     persist();closeSheet();renderTasks();renderDnes();renderNotes();toast('Úkol přidán');
     return;
   }
@@ -931,7 +1002,7 @@ $('sheetSave').onclick=()=>{
     if(!text){toast('Napiš připomínku');return}
     if(!date){toast('Vyber den');return}
     const when=date+'T'+(time||'09:00').slice(0,5);
-    reminders.push(normalizeRem({id:uid('r'),text,when,done:false,created:todayISO()}));
+    reminders.push(touch(normalizeRem({id:uid('r'),text,when,done:false,created:todayISO()})));
     persist();closeSheet();renderDnes();renderRems();renderNotes();toast('Připomínka přidána');
     return;
   }
@@ -962,7 +1033,7 @@ $('sheetSave').onclick=()=>{
       persist();closeSheet();refreshLists();
       undoRestore(r,copy,'Připomínka uložena');
     }else{
-      reminders.push(normalizeRem({id:uid('r'),text,when,done:false,created:todayISO()}));
+      reminders.push(touch(normalizeRem({id:uid('r'),text,when,done:false,created:todayISO()})));
       persist();closeSheet();refreshLists();
       toast('Připomínka přidána');
     }
@@ -995,10 +1066,13 @@ $('sheetSave').onclick=()=>{
     if(t.status!=='done'&&draft.status==='done'){t.prevStatus=t.status;t.doneAt=todayISO()}
     if(t.status==='done'&&draft.status!=='done')t.doneAt='';
     t.text=text;t.cat=draft.cat;t.bucket=draft.bucket;t.status=draft.status;t.note=note;t.due=draft.due||'';t.repeat=draft.repeat||'';touch(t);
+    if($('fBiz'))setTaskBiz(t.id,draft.biz||'');
     const moved=prev.bucket!==t.bucket;
     toast(moved?('Přesunuto do „'+buckBy(t.bucket).name+'“'):'Úkol uložen',{label:'Zpět',fn:()=>{Object.assign(t,prev);persist();refreshLists()}});
   }else{
-    tasks.push(normalizeTask({id:uid('t'),text,cat:draft.cat,bucket:draft.bucket,status:draft.status,note,due:draft.due,repeat:draft.repeat||'',created:todayISO()}));
+    const nt=touch(normalizeTask({id:uid('t'),text,cat:draft.cat,bucket:draft.bucket,status:draft.status,note,due:draft.due,repeat:draft.repeat||'',created:todayISO()}));
+    tasks.push(nt);
+    if(draft.biz)setTaskBiz(nt.id,draft.biz);
     toast('Úkol přidán');
   }
   persist();closeSheet();refreshLists();
@@ -1037,7 +1111,7 @@ function renderQuickBucket(){
 $('quickAdd').onclick=()=>{
   const text=$('quickTask').value.trim();
   if(!text){toast('Napiš úkol');return}
-  tasks.push(normalizeTask({id:uid('t'),text,cat:'ost',bucket:quickBucket,status:'open',created:todayISO()}));
+  tasks.push(touch(normalizeTask({id:uid('t'),text,cat:'ost',bucket:quickBucket,status:'open',created:todayISO()})));
   $('quickTask').value='';persist();renderDnes();renderTasks();toast('Úkol přidán');
 };
 
@@ -1061,7 +1135,7 @@ function addReminderFrom(textEl,dateEl,timeEl){
   const text=textEl.value.trim();
   if(!text){toast('Napiš připomínku');return}
   const when=remWhenFrom(text,dateEl,timeEl);
-  reminders.push(normalizeRem({id:uid('r'),text,when,done:false,created:todayISO()}));
+  reminders.push(touch(normalizeRem({id:uid('r'),text,when,done:false,created:todayISO()})));
   textEl.value='';dateEl.value='';timeEl.value='';
   persist();renderDnes();renderRems();toast('Připomínka přidána');
 }
@@ -1205,7 +1279,7 @@ function saveNoteFromComposer(){
     if(n){n.text=text;n.tag=tag;n.updated=nowStamp();touch(n)}
     toast('Poznámka upravena');
   }else{
-    notes.push(normalizeNote({id:uid('n'),text,tag,at:nowStamp()}));
+    notes.push(touch(normalizeNote({id:uid('n'),text,tag,at:nowStamp()})));
     toast('Poznámka uložena');
   }
   clearNoteComposer();
@@ -1279,18 +1353,13 @@ function renderNotes(){
 function renderTodayNotes(){
   const today=todayISO();
   const todays=sortedNotes().filter(n=>String(n.at||'').slice(0,10)===today);
-  const unsynced=(function(){
-    const snap=load('den_snap',null);
-    const map=new Map((snap&&snap.poznamky||[]).map(x=>[x.id,x]));
-    return notes.filter(n=>{const p=map.get(n.id);return !p||p.text!==n.text||(p.tag||'')!==(n.tag||'');}).length;
-  })();
   const sum=$('todayNotesSum');
   if(!sum)return;
   const parts=[];
   const nToday=todays.length, word=nToday===1?'poznámka':nToday<5?'poznámky':'poznámek';
   parts.push(nToday?('Dnes '+nToday+' '+word):'Dnes žádná poznámka');
-  if(notes.length)parts.push('celkem '+notes.length);
-  if(unsynced)parts.push(unsynced+' k odeslání');
+  const liveNotes=notes.filter(isLive).length;
+  if(liveNotes)parts.push('celkem '+liveNotes);
   sum.textContent=parts.join(' · ');
   const box=$('todayNotesList');box.innerHTML='';
   todays.slice(0,3).forEach(n=>box.appendChild(noteCard(n,true)));
@@ -1303,7 +1372,7 @@ function renderDnes(){
   if(oc){
     oc.hidden=true;
     const ok=$('onboardOk');
-    if(ok)ok.onclick=()=>{settings.seenOnboard=true;persist();oc.hidden=true};
+    if(ok)ok.onclick=()=>{settings.seenOnboard=true;touch(settings);persist();oc.hidden=true};
   }
   todayTaskList();
   renderQuickBucket();
@@ -1364,19 +1433,19 @@ function renderDochazka(){
     expBox.appendChild(card);
   }
   const p=period();
-  const openDays=days.filter(d=>inPeriod(d.date,p)&&dayMin(d)>0).sort((a,b)=>a.date.localeCompare(b.date));
+  const openDays=days.filter(d=>isLive(d)&&inPeriod(d.date,p)&&dayMin(d)>0).sort((a,b)=>a.date.localeCompare(b.date));
   const openMin=openDays.reduce((a,d)=>a+dayMin(d),0);
-  const openExp=expenses.filter(e=>inPeriod(e.date,p)).sort((a,b)=>a.date.localeCompare(b.date));
+  const openExp=expenses.filter(e=>isLive(e)&&inPeriod(e.date,p)).sort((a,b)=>a.date.localeCompare(b.date));
   const openExpSum=openExp.reduce((a,e)=>a+e.czk,0),total=pay(openMin)+openExpSum;
   let html='<p class="muted" style="margin:0 0 10px">Období '+esc(czPeriod(p.start,p.end))+(p.end<='2026-11-30'&&settings.billedUntil<'2026-11-30'?' · pak už celé kalendářní měsíce':'')+', bez DPH.</p>';
-  html+='<div class="rowline"><div>Práce, '+openDays.length+' dnů zatím</div><div class="amt">'+fmt(openMin)+' × '+settings.rate+' Kč<br>'+czk(pay(openMin))+'</div></div>';
+  html+='<div class="rowline"><div>Práce, '+czCount(openDays.length,'den','dny','dnů')+' zatím</div><div class="amt">'+fmt(openMin)+' × '+settings.rate+' Kč<br>'+czk(pay(openMin))+'</div></div>';
   openExp.forEach(e=>{html+='<div class="rowline"><div>'+esc(e.what)+'<div class="muted">'+esc(czDateLong(e.date))+'</div></div><div class="amt">'+czk(e.czk)+'</div></div>'});
   html+='<div class="bill-total"><span>Zatím celkem</span><span>'+czk(total)+'</span></div>';
   html+='<div class="actions"><button type="button" class="secondary" id="markBilled">Období je vyfakturované</button></div>';
   $('nextInvoice').innerHTML=html;
   $('markBilled').onclick=()=>openMarkBilled(p,openMin,openExpSum,total);
   const invBox=$('pastInvoices');
-  const inv=[...invoices].sort((a,b)=>a.date.localeCompare(b.date));
+  const inv=invoices.filter(isLive).sort((a,b)=>a.date.localeCompare(b.date));
   if(!inv.length)invBox.innerHTML='<div class="card muted">Zatím žádná zapsaná faktura.</div>';
   else invBox.innerHTML='<div class="card">'+inv.map(e=>'<div class="rowline"><div><b>'+esc(czDate(e.date))+'</b><div class="muted">'+esc(e.what)+'</div></div><div class="amt">'+czk(e.czk)+'</div></div>').join('')+'</div>';
 }
@@ -1513,7 +1582,7 @@ async function encryptBackup(plain,pass){
 function dumpState(){
   return {
     kind:'den-state',v:1,app:APP_VERSION,at:nowStamp(),
-    tasks,days,expenses,invoices,reminders,notes,settings,
+    tasks,days,expenses,invoices,reminders,notes,businesses,settings,
     categories:customCats,applied:loadAppliedInbox(),
     draft:load('den_draft',null),note_draft:load('den_note_draft',null),
     snap:load('den_snap',null),pending_mails:load('den_pending_mails',[])
@@ -1527,6 +1596,7 @@ function applyFullState(data){
   invoices=(data.invoices||[]).map(normalizeExp).filter(Boolean);
   reminders=(data.reminders||[]).map(normalizeRem).filter(Boolean);
   notes=(data.notes||data.poznamky||[]).map(normalizeNote).filter(Boolean);
+  if(Array.isArray(data.businesses))businesses=mergeBizLists(data.businesses);
   settings=Object.assign(defaultSettings(),data.settings||{});
   if(Array.isArray(data.categories)||Array.isArray(data.kategorie)){
     customCats=(data.categories||data.kategorie||[]).map(normalizeCategory).filter(Boolean);
@@ -1858,7 +1928,10 @@ $('noteCancelEdit').onclick=()=>{clearNoteComposer();toast('Úprava zrušena')};
 $('noteText').addEventListener('input',saveNoteDraft);
 $('noteTag').addEventListener('change',saveNoteDraft);
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'){saveNoteDraft();stopDictation()}});
-window.addEventListener('pagehide',saveNoteDraft);
+window.addEventListener('pagehide',()=>{saveNoteDraft();flushBizSave()});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')flushBizSave()});
+if($('allRems'))$('allRems').onclick=()=>setView('rems');
+if($('remsBack'))$('remsBack').onclick=()=>setView('dnes');
 $('goNotes').onclick=()=>setView('notes');
 
 
@@ -2144,6 +2217,7 @@ function bootUi(){
   if(uiReady){
     renderDnes();
     if(view==='ukoly')renderTasks();
+    if(view==='biz')renderBiz();
     if(view==='dochazka')renderDochazka();
     if(view==='rems')renderRems();
     if(view==='notes')renderNotes();
@@ -2186,6 +2260,7 @@ function dedupeAll(){
   invoices=dedupeList(invoices,fpExp);
   notes=dedupeList(notes,fpNote);
   reminders=dedupeList(reminders,fpRem);
+  businesses=mergeBizLists(businesses);
   return before-n();
 }
 function mergeAppliedInbox(remote){
@@ -2210,7 +2285,7 @@ function mergeById(local, remote, keyFn){
 }
 function mergeRemoteState(data){
   if(!data||typeof data!=='object')return 0;
-  const before=JSON.stringify({t:tasks,d:days,e:expenses,i:invoices,r:reminders,n:notes,s:settings,c:customCats});
+  const before=JSON.stringify({t:tasks,d:days,e:expenses,i:invoices,r:reminders,n:notes,s:settings,c:customCats,b:businesses});
   const srcTasks=(data.tasks||[]).map(normalizeTask).filter(Boolean);
   const srcDays=(data.days||[]).map(normalizeDay).filter(Boolean);
   const srcExp=(data.expenses||[]).map(normalizeExp).filter(Boolean);
@@ -2224,6 +2299,7 @@ function mergeRemoteState(data){
   invoices=mergeById(invoices,srcInv,x=>x.id);
   reminders=mergeById(reminders,srcRem,x=>x.id);
   notes=mergeById(notes,srcNotes,x=>x.id);
+  if(Array.isArray(data.businesses))businesses=mergeBizLists(businesses,data.businesses);
   dedupeAll();
   mergeAppliedInbox(data.applied);
   if(srcCats.length)customCats=mergeById(customCats,srcCats,x=>x.id);
@@ -2231,7 +2307,7 @@ function mergeRemoteState(data){
     if(itemUpdatedAt(data.settings)>=itemUpdatedAt(settings))settings=Object.assign({},settings,data.settings);
   }
   syncApplying=true;persist();syncApplying=false;
-  const after=JSON.stringify({t:tasks,d:days,e:expenses,i:invoices,r:reminders,n:notes,s:settings,c:customCats});
+  const after=JSON.stringify({t:tasks,d:days,e:expenses,i:invoices,r:reminders,n:notes,s:settings,c:customCats,b:businesses});
   return before===after?0:1;
 }
 const SYNC_OWNER='FilipKubicny',SYNC_REPO='den-data',SYNC_PATH='state.enc';
@@ -2510,14 +2586,15 @@ function canonicalPayload(data){
     reminders:sortByKey((data.reminders||[]).map(stripVolatile),x=>x.id),
     notes:sortByKey((data.notes||data.poznamky||[]).map(stripVolatile),x=>x.id),
     categories:sortByKey((data.categories||data.kategorie||[]).map(stripVolatile),x=>x.id),
+    businesses:sortByKey((data.businesses||[]).map(stripVolatile),x=>x.id),
     settings:stripVolatile(data.settings&&typeof data.settings==='object'?data.settings:{}),
     applied:(data.applied||[]).map(String).sort()
   };
 }
 function contentHash(data){const s=stableStringify(canonicalPayload(data));return fnv1a(s)+':'+s.length}
-function liveCloudPayload(){return {tasks,days,expenses,invoices,reminders,notes,settings,categories:customCats,applied:loadAppliedInbox()}}
+function liveCloudPayload(){return {tasks,days,expenses,invoices,reminders,notes,businesses,settings,categories:customCats,applied:loadAppliedInbox()}}
 function dumpCloudState(at){
-  return {kind:'den-state',v:1,app:APP_VERSION,at:at||nowStamp(),tasks,days,expenses,invoices,reminders,notes,settings,categories:customCats,applied:loadAppliedInbox()};
+  return {kind:'den-state',v:1,app:APP_VERSION,at:at||nowStamp(),tasks,days,expenses,invoices,reminders,notes,businesses,settings,categories:customCats,applied:loadAppliedInbox()};
 }
 function fetchTimeout(url,opts,ms){
   const c=new AbortController();
@@ -2812,6 +2889,219 @@ function bindShortcuts(){
     if(ev.key==='n'||ev.key==='N'){ev.preventDefault();openQuickAdd();return}
     if(ev.key==='/'){ev.preventDefault();const q=$('searchQ');if(q){q.focus();q.select()}return}
   });
+}
+
+/* ================= Kompas 12.3: Byznys ================= */
+let bizOpenId=null,bizRenderPending=false,bizSaveTimer=0,bizLogOpen=false;
+const BIZ_RANK={running:0,launching:1,validating:2,idea:3,paused:4};
+const BIZ_ICO='<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path d="M12 3.2a6 6 0 0 0-3.6 10.8c.7.5 1.1 1.3 1.1 2.1v.4h5v-.4c0-.8.4-1.6 1.1-2.1A6 6 0 0 0 12 3.2z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M9.8 19.5h4.4M10.6 21.5h2.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
+function liveBiz(){return businesses.filter(isLive).sort((a,b)=>(BIZ_RANK[a.status]-BIZ_RANK[b.status])||cpCmp(a.created||'9',b.created||'9')||a.name.localeCompare(b.name,'cs'))}
+function bizById(id){return businesses.find(b=>b.id===id&&isLive(b))||null}
+function bizStatusName(id){const s=BIZ_STATUSES.find(x=>x.id===id);return s?s.name:'Nápad'}
+function bizForTask(id){return businesses.find(b=>isLive(b)&&b.taskIds.includes(id))||null}
+function bizTasks(b){const m=new Map(tasks.filter(isLive).map(t=>[t.id,t]));return b.taskIds.map(id=>m.get(id)).filter(Boolean)}
+function bizFilled(b){
+  let n=0;BIZ_CANVAS.forEach(f=>{if(f.id==='customers'?b.customers:b.canvas[f.id])n++});
+  return n;
+}
+function bizDefaultCat(){const c=customCats.find(x=>x.id==='u_business_smery'&&!x.deleted);return c?c.id:'ost'}
+function bizIsEditing(){
+  const a=document.activeElement,d=$('bizDetail');
+  return !!(a&&d&&d.contains(a)&&isTypingTarget(a));
+}
+function renderBiz(){
+  const list=$('bizList'),det=$('bizDetail');if(!list||!det)return;
+  if(bizOpenId&&!bizById(bizOpenId))bizOpenId=null;
+  if(bizOpenId){
+    if(bizIsEditing()){bizRenderPending=true;return}
+    list.hidden=true;det.hidden=false;renderBizDetail(bizById(bizOpenId));return;
+  }
+  det.hidden=true;det.innerHTML='';list.hidden=false;list.innerHTML='';
+  const arr=liveBiz();
+  const intro=document.createElement('p');intro.className='muted biz-intro';
+  intro.textContent=arr.length?'Tvoje podnikatelské nápady. Ťukni na kartu a doplň, co víš – vše se ukládá samo.':'';
+  if(arr.length)list.appendChild(intro);
+  if(!arr.length){
+    list.innerHTML=emptyState('💡','Zatím žádný byznys nápad','Zapiš si nápad a postupně doplň, pro koho je a jak vydělá.');
+  }
+  arr.forEach(b=>list.appendChild(bizCard(b)));
+  const add=document.createElement('button');add.type='button';add.className='biz-add';add.innerHTML='<span aria-hidden="true">+</span> Nový byznys nápad';
+  add.onclick=openBizNewSheet;list.appendChild(add);
+}
+function bizCard(b){
+  const open=bizTasks(b).filter(t=>t.status!=='done');
+  const filled=bizFilled(b),total=BIZ_CANVAS.length;
+  const el=document.createElement('button');el.type='button';el.className='biz-card st-'+b.status;
+  const next=b.canvas.next;
+  el.innerHTML='<div class="biz-top"><span class="biz-name">'+esc(b.name)+'</span><span class="biz-st st-'+esc(b.status)+'">'+esc(bizStatusName(b.status))+'</span></div>'+
+    (b.pitch?'<div class="biz-pitch">'+esc(b.pitch)+'</div>':'<div class="biz-pitch ph">Doplň jednou větou, o co jde</div>')+
+    (b.customers?'<div class="biz-line"><b>Pro koho:</b> '+esc(b.customers)+'</div>':'')+
+    (next?'<div class="biz-line"><b>Další krok:</b> '+esc(next)+'</div>':'')+
+    '<div class="biz-foot"><span class="biz-prog" aria-hidden="true"><i style="width:'+Math.round(filled/total*100)+'%"></i></span>'+
+    '<span>Plán '+filled+'/'+total+'</span>'+
+    (open.length?'<span>· '+czCount(open.length,'úkol','úkoly','úkolů')+'</span>':'')+
+    (b.log.filter(isLive).length?'<span>· '+czCount(b.log.filter(isLive).length,'nápad','nápady','nápadů')+'</span>':'')+'</div>';
+  el.setAttribute('aria-label',b.name+', '+bizStatusName(b.status)+', plán vyplněn '+filled+' z '+total);
+  el.onclick=()=>openBiz(b.id);
+  return el;
+}
+function openBiz(id){
+  if(searchActive()){$('searchQ').value='';renderSearch()}
+  bizOpenId=id;bizLogOpen=false;
+  if(view!=='biz')setView('biz');else renderBiz();
+  window.scrollTo(0,0);syncTitle();
+}
+function closeBiz(){flushBizSave();bizOpenId=null;renderBiz();window.scrollTo(0,0);syncTitle()}
+function autoGrow(el){if(!el)return;el.style.height='auto';el.style.height=Math.min(el.scrollHeight+2,480)+'px'}
+function bizField(b,key){
+  if(key==='name'||key==='pitch'||key==='customers')return b[key];
+  if(key.startsWith('c.'))return b.canvas[key.slice(2)]||'';
+  if(key.startsWith('n.'))return b.numbers[key.slice(2)]||'';
+  return '';
+}
+function setBizField(b,key,val){
+  val=String(val||'').trim();
+  if(key==='name'){if(!val)return false;if(b.name===val)return false;b.name=val;return true}
+  if(key==='pitch'||key==='customers'){if(b[key]===val)return false;b[key]=val;return true}
+  if(key.startsWith('c.')){const k=key.slice(2);if((b.canvas[k]||'')===val)return false;b.canvas[k]=val;return true}
+  if(key.startsWith('n.')){const k=key.slice(2);if((b.numbers[k]||'')===val)return false;b.numbers[k]=val;return true}
+  return false;
+}
+function flushBizSave(){
+  clearTimeout(bizSaveTimer);bizSaveTimer=0;
+  const det=$('bizDetail');if(!det||det.hidden||!bizOpenId)return;
+  const b=bizById(bizOpenId);if(!b)return;
+  let ch=false;
+  det.querySelectorAll('[data-bf]').forEach(el=>{if(setBizField(b,el.dataset.bf,el.value))ch=true});
+  if(ch){touch(b);persist();const s=det.querySelector('.biz-saved');if(s)s.textContent='Uloženo ✓ · '+bizEditedLabel(b)}
+}
+function bizEditedLabel(b){
+  const t=itemUpdatedAt(b);if(!t)return '';
+  const d=new Date(t);return 'upraveno '+czDateSp(toISO(d))+' v '+pad(d.getHours())+':'+pad(d.getMinutes());
+}
+function bizTa(key,val,ph,rows,label,cls){
+  const id='bf_'+key.replace(/\W/g,'_');
+  return '<div class="field biz-f'+(cls?' '+cls:'')+'"><label for="'+id+'">'+esc(label)+'</label><textarea id="'+id+'" data-bf="'+esc(key)+'" rows="'+(rows||2)+'" placeholder="'+esc(ph)+'" enterkeyhint="done">'+esc(val)+'</textarea></div>';
+}
+function renderBizDetail(b){
+  const det=$('bizDetail');if(!b){det.innerHTML='';return}
+  bizRenderPending=false;
+  const bt=bizTasks(b),open=sortTasks(bt.filter(t=>t.status!=='done')),done=bt.filter(t=>t.status==='done');
+  const logs=b.log.filter(isLive);
+  let h='<button type="button" class="biz-back" id="bizBack"><span aria-hidden="true">‹</span> Byznys</button>';
+  h+='<div class="card biz-head">'+
+    '<label class="sr-only" for="bf_name">Název</label><input id="bf_name" class="biz-title-in" data-bf="name" value="'+esc(b.name)+'" placeholder="Název" autocomplete="off" enterkeyhint="done">'+
+    '<label class="sr-only" for="bf_pitch">O co jde jednou větou</label><textarea id="bf_pitch" class="biz-pitch-in" data-bf="pitch" rows="1" placeholder="O co jde – jednou větou" enterkeyhint="done">'+esc(b.pitch)+'</textarea>'+
+    '<div class="lbl" id="bizStLbl">Stav</div><div class="biz-seg" role="radiogroup" aria-labelledby="bizStLbl">'+
+      BIZ_STATUSES.map(s=>'<button type="button" role="radio" aria-checked="'+(s.id===b.status)+'" class="st-'+s.id+(s.id===b.status?' on':'')+'" data-st="'+s.id+'">'+esc(s.name)+'</button>').join('')+
+    '</div></div>';
+  h+='<h2>Plán <span class="h2-sub">'+bizFilled(b)+' z '+BIZ_CANVAS.length+' vyplněno</span></h2><div class="card biz-canvas">';
+  BIZ_CANVAS.forEach((f,i)=>{
+    const key=f.id==='customers'?'customers':'c.'+f.id;
+    h+=bizTa(key,bizField(b,key),f.ph,2,(i+1)+'. '+f.name,f.id==='next'?'biz-next':'');
+  });
+  if(b.canvas.next)h+='<button type="button" class="secondary biz-mini" id="bizNextTask">Udělat z dalšího kroku úkol</button>';
+  h+='</div>';
+  h+='<h2>Úkoly</h2><div class="group" id="bizTaskList"></div>'+
+    '<div class="card biz-addrow"><label class="sr-only" for="bizNewTask">Nový úkol k tomuto byznysu</label><input id="bizNewTask" placeholder="Nový úkol k '+esc(b.name)+'" enterkeyhint="send" autocomplete="off"><button type="button" class="biz-plus" id="bizAddTask" aria-label="Přidat úkol">+</button></div>';
+  h+='<h2>Nápady a poznámky</h2><div class="card biz-addrow"><label class="sr-only" for="bizNewLog">Nový nápad nebo poznámka</label><textarea id="bizNewLog" rows="1" placeholder="Co tě napadlo? Uloží se s dnešním datem."></textarea><button type="button" class="biz-plus" id="bizAddLog" aria-label="Přidat nápad">+</button></div>'+
+    '<div class="group" id="bizLogList"></div>';
+  h+='<h2>Čísla (hrubý odhad)</h2><div class="card biz-nums">'+BIZ_NUMBERS.map(n=>{const key='n.'+n.id,id='bf_n_'+n.id;return '<div class="field"><label for="'+id+'">'+esc(n.name)+'</label><input id="'+id+'" data-bf="'+key+'" value="'+esc(bizField(b,key))+'" placeholder="'+esc(n.ph)+'" autocomplete="off" enterkeyhint="done"></div>'}).join('')+'</div>';
+  h+='<p class="muted center biz-saved" aria-live="polite">Ukládá se samo'+(itemUpdatedAt(b)?' · '+esc(bizEditedLabel(b)):'')+'</p>';
+  h+='<div class="actions"><button type="button" class="danger" id="bizDelete">Smazat byznys</button></div>';
+  det.innerHTML=h;
+  // tasks
+  const tl=$('bizTaskList');
+  if(!open.length&&!done.length)tl.innerHTML='<p class="muted es-inline">Zatím žádné úkoly. Přidej první krok níže.</p>';
+  open.forEach(t=>tl.appendChild(taskCard(t,{hideBiz:true})));
+  if(done.length){const p=document.createElement('p');p.className='muted es-inline';p.textContent='Hotovo: '+done.length;tl.appendChild(p)}
+  // log
+  const ll=$('bizLogList');
+  if(!logs.length)ll.innerHTML='<p class="muted es-inline">Sem si piš nápady, postřehy a co jsi zjistil.</p>';
+  const showLogs=bizLogOpen?logs:logs.slice(0,8);
+  showLogs.forEach(e=>ll.appendChild(bizLogCard(b,e)));
+  if(logs.length>showLogs.length){const m=document.createElement('button');m.type='button';m.className='secondary';m.textContent='Zobrazit všech '+logs.length;m.onclick=()=>{bizLogOpen=true;renderBizDetail(b)};ll.appendChild(m)}
+  // wiring
+  $('bizBack').onclick=closeBiz;
+  det.querySelectorAll('[data-bf]').forEach(el=>{
+    if(el.tagName==='TEXTAREA'){autoGrow(el);el.addEventListener('input',()=>autoGrow(el))}
+    el.addEventListener('input',()=>{clearTimeout(bizSaveTimer);bizSaveTimer=setTimeout(flushBizSave,700)});
+    el.addEventListener('blur',flushBizSave);
+    if(el.dataset.bf==='name'||el.dataset.bf==='pitch'||el.tagName==='INPUT')el.addEventListener('keydown',ev=>{if(ev.key==='Enter'){ev.preventDefault();el.blur()}});
+  });
+  det.querySelectorAll('[data-st]').forEach(btn=>btn.onclick=()=>{
+    const st=btn.dataset.st;if(st===b.status)return;
+    flushBizSave();const prev=b.status;b.status=st;touch(b);persist();haptic();renderBizDetail(b);
+    toast('Stav: '+bizStatusName(st),{label:'Zpět',fn:()=>{b.status=prev;touch(b);persist();refreshLists()}});
+  });
+  const addT=()=>{
+    const inp=$('bizNewTask');const text=(inp.value||'').trim();if(!text){inp.focus();return}
+    flushBizSave();
+    const t=touch(normalizeTask({id:uid('t'),text,cat:bizDefaultCat(),bucket:'weeks',status:'open',created:todayISO()}));
+    tasks.push(t);b.taskIds.push(t.id);touch(b);persist();haptic();
+    renderBizDetail(b);const ni=$('bizNewTask');if(ni)ni.focus();
+    toast('Úkol přidán',{label:'Zpět',fn:()=>{t.deleted=true;touch(t);b.taskIds=b.taskIds.filter(x=>x!==t.id);touch(b);persist();refreshLists()}});
+  };
+  $('bizAddTask').onclick=addT;
+  $('bizNewTask').addEventListener('keydown',ev=>{if(ev.key==='Enter'){ev.preventDefault();addT()}});
+  const addL=()=>{
+    const inp=$('bizNewLog');const text=(inp.value||'').trim();if(!text){inp.focus();return}
+    flushBizSave();
+    const e={id:uid('l'),text,at:nowStamp(),updatedAt:Date.now(),deleted:false};
+    b.log=sortBizLog([e].concat(b.log));touch(b);persist();haptic();renderBizDetail(b);toast('Nápad uložen');
+  };
+  $('bizAddLog').onclick=addL;
+  autoGrow($('bizNewLog'));$('bizNewLog').addEventListener('input',()=>autoGrow($('bizNewLog')));
+  const nt=$('bizNextTask');if(nt)nt.onclick=()=>{$('bizNewTask').value=b.canvas.next;addT()};
+  $('bizDelete').onclick=()=>{
+    flushBizSave();b.deleted=true;touch(b);persist();bizOpenId=null;haptic('heavy');renderBiz();
+    toast('Byznys „'+b.name+'“ smazán',{label:'Zpět',fn:()=>{b.deleted=false;touch(b);persist();bizOpenId=b.id;if(view!=='biz')setView('biz');else renderBiz()}});
+  };
+  det.onfocusout=bizFocusOut;
+}
+function bizFocusOut(ev){
+  const det=$('bizDetail');
+  if(!bizRenderPending||(ev.relatedTarget&&det&&det.contains(ev.relatedTarget)))return;
+  setTimeout(()=>{if(bizRenderPending&&!bizIsEditing()&&view==='biz')renderBiz()},60);
+}
+function bizLogCard(b,e){
+  const d=document.createElement('div');d.className='note biz-log';
+  d.innerHTML='<div class="ntime">'+esc(stampToDisplay(e.at))+'</div><div class="ntext">'+esc(e.text)+'</div>'+
+    '<div class="note-actions"><button type="button" data-a="task">Udělat z toho úkol</button><button type="button" class="danger" data-a="del">Smazat</button></div>';
+  const del=()=>{e.deleted=true;e.updatedAt=Date.now();touch(b);persist();renderBizDetail(b);
+    toast('Smazáno',{label:'Zpět',fn:()=>{e.deleted=false;e.updatedAt=Date.now();touch(b);persist();refreshLists()}})};
+  d.querySelector('[data-a="del"]').onclick=del;
+  d.querySelector('[data-a="task"]').onclick=()=>{const i=$('bizNewTask');if(i){i.value=e.text;$('bizAddTask').click()}};
+  attachSwipe(d,{left:{label:'Smazat',fn:del}});
+  return d;
+}
+function openBizNewSheet(){
+  sheetMode='biz-new';sheetTarget=null;
+  $('sheetTitle').textContent='Nový byznys nápad';
+  $('sheetDelete').hidden=true;
+  $('sheetBody').innerHTML='<div class="field"><label for="nbName">Název</label><input id="nbName" placeholder="Např. Aura Cut" autocomplete="off" enterkeyhint="next"></div>'+
+    '<div class="field"><label for="nbPitch">O co jde (stačí jedna věta)</label><textarea id="nbPitch" rows="2" placeholder="Např. mobilní barber pro studenty"></textarea></div>';
+  $('sheetSave').textContent='Vytvořit';
+  $('overlay').hidden=false;document.body.classList.add('locked');
+  setTimeout(()=>$('nbName')&&$('nbName').focus(),50);
+}
+function submitBizNew(){
+  const name=(($('nbName')&&$('nbName').value)||'').trim(),pitch=(($('nbPitch')&&$('nbPitch').value)||'').trim();
+  if(!name){toast('Napiš název');$('nbName')&&$('nbName').focus();return}
+  if(liveBiz().some(x=>fpText(x.name)===fpText(name))){toast('Takový byznys už máš');return}
+  const b=touch(normalizeBiz({id:uid('b'),name,pitch,status:'idea',created:todayISO()}));
+  businesses.push(b);persist();closeSheet();haptic();openBiz(b.id);toast('Byznys vytvořen');
+}
+/* link a task to a business from the task sheet */
+function setTaskBiz(taskId,bizId){
+  let ch=false;
+  businesses.forEach(b=>{
+    if(!isLive(b))return;
+    const has=b.taskIds.includes(taskId);
+    if(b.id===bizId&&!has){b.taskIds.push(taskId);touch(b);ch=true}
+    else if(b.id!==bizId&&has){b.taskIds=b.taskIds.filter(x=>x!==taskId);touch(b);ch=true}
+  });
+  return ch;
 }
 
 /* ================= Kompas 12: zero-config, quick add, swipe, pull to refresh ================= */
@@ -3337,15 +3627,19 @@ function renderSearch(){
   const q=hay(($('searchQ')&&$('searchQ').value||'').trim());
   if(!q){
     box.hidden=true;box.innerHTML='';
-    ['dnes','ukoly','dochazka','rems','notes'].forEach(id=>$('view-'+id).hidden=view!==id);
+    VIEWS.forEach(id=>$('view-'+id).hidden=view!==id);
     return;
   }
-  ['dnes','ukoly','dochazka','rems','notes'].forEach(id=>$('view-'+id).hidden=true);
+  VIEWS.forEach(id=>$('view-'+id).hidden=true);
   box.hidden=false;box.innerHTML='';
   const h=document.createElement('h2');h.className='task-sec';h.textContent='Výsledky hledání';box.appendChild(h);
   const tHits=sortTasks(tasks.filter(t=>isLive(t)&&hay(t.text+' '+(t.note||'')).includes(q)));
   const nHits=notes.filter(n=>isLive(n)&&hay(n.text+' '+(n.tag||'')).includes(q));
-  if(!tHits.length&&!nHits.length){
+  const bHits=liveBiz().filter(b=>hay([b.name,b.pitch,b.customers].concat(Object.values(b.canvas),Object.values(b.numbers),b.log.filter(isLive).map(e=>e.text)).join(' ')).includes(q));
+  const rHits=upcomingRems().concat(reminders.filter(r=>isLive(r)&&r.done)).filter(r=>hay(r.text).includes(q));
+  if(bHits.length)appendGroup(box,'Byznys',bHits.map(b=>bizCard(b)),{boxCls:'biz-results'});
+  if(rHits.length)appendGroup(box,'Připomínky',rHits.map(r=>remCard(r)));
+  if(!tHits.length&&!nHits.length&&!bHits.length&&!rHits.length){
     const p=document.createElement('p');p.className='empty';p.textContent='Nic se nenašlo.';box.appendChild(p);return;
   }
   if(tHits.length)appendGroup(box,'Úkoly',tHits.map(t=>taskCard(t)));
@@ -3353,8 +3647,8 @@ function renderSearch(){
 }
 function timesheetRows(p){
   p=p||period();
-  const list=days.filter(d=>inPeriod(d.date,p)).sort((a,b)=>a.date.localeCompare(b.date));
-  const exp=expenses.filter(e=>inPeriod(e.date,p)).sort((a,b)=>a.date.localeCompare(b.date));
+  const list=days.filter(d=>isLive(d)&&inPeriod(d.date,p)).sort((a,b)=>a.date.localeCompare(b.date));
+  const exp=expenses.filter(e=>isLive(e)&&inPeriod(e.date,p)).sort((a,b)=>a.date.localeCompare(b.date));
   const billMin=list.reduce((a,d)=>a+dayMin(d),0),expSum=exp.reduce((a,e)=>a+e.czk,0),workCzk=pay(billMin);
   return {p,list,exp,billMin,expSum,workCzk,total:workCzk+expSum,rate:settings.rate};
 }

@@ -338,7 +338,7 @@ button:active,.chip:active,.fchip:active,.tab:active,.chk:active,.ghost-btn:acti
   body,#appRoot,#appMain{padding:0;max-width:none;background:#fff;color:#000;height:auto;display:block}
   main{padding:0;display:block!important}
   #view-ukoly{display:block!important}
-  #view-dnes,#view-dochazka,#view-rems,#view-notes{display:none!important}
+  #view-dnes,#view-dochazka,#view-rems,#view-notes,#view-biz{display:none!important}
   #taskList{display:none!important}
   #taskTableWrap{display:block!important;border:0;overflow:visible}
   #taskTable th{position:static}
@@ -447,3 +447,56 @@ details.advanced[open] summary::after{transform:rotate(90deg)}
   *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
 }
 @media print{.qfab,.ptr,.welcome,#offlineBanner{display:none!important}}
+
+/* ---------- Kompas 12.3: Byznys ---------- */
+.biz-intro{margin:4px 2px 12px;font-size:14px}
+.biz-card{display:block;width:100%;text-align:left;background:var(--card);border-radius:var(--radius);padding:14px 16px;margin:0 0 12px;font-weight:400;min-height:0;border-left:4px solid var(--bst,var(--muted));transition:transform .12s}
+.biz-card:active{transform:scale(.985)}
+.biz-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.biz-name{font-size:19px;font-weight:700;letter-spacing:-.3px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.biz-st{flex:0 0 auto;font-size:12px;font-weight:600;padding:3px 9px;border-radius:999px;background:color-mix(in srgb,var(--bst,var(--muted)) 16%,transparent);color:var(--bst,var(--muted))}
+.biz-pitch{margin-top:4px;font-size:15px;color:var(--text)}
+.biz-pitch.ph{color:var(--muted);font-style:italic}
+.biz-line{margin-top:4px;font-size:14px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.biz-line b{color:var(--text);font-weight:600}
+.biz-foot{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:10px;font-size:12px;color:var(--muted);font-weight:500}
+.biz-prog{width:64px;height:6px;border-radius:3px;background:var(--fill);overflow:hidden;display:inline-block}
+.biz-prog i{display:block;height:100%;background:var(--bst,var(--accent));border-radius:3px}
+.st-idea{--bst:var(--muted)}
+.st-validating{--bst:oklch(0.62 0.16 65)}
+.st-launching{--bst:var(--wip)}
+.st-running{--bst:var(--accent)}
+.st-paused{--bst:oklch(0.6 0.02 230)}
+.biz-add{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:52px;border:1.5px dashed var(--line);border-radius:var(--radius);color:var(--accent);font-size:16px;margin:4px 0 12px;background:transparent}
+.biz-add span{font-size:22px;line-height:1}
+.biz-back{display:inline-flex;align-items:center;gap:4px;color:var(--accent);font-size:17px;font-weight:400;padding:0 6px 0 0;margin:0 0 4px;min-height:44px}
+.biz-back span{font-size:26px;line-height:1;margin-top:-2px}
+.biz-head{padding:12px 16px 14px}
+.card input.biz-title-in{font-size:24px;font-weight:700;letter-spacing:-.5px;background:transparent;border:0;padding:4px 0;border-radius:0}
+.card textarea.biz-pitch-in{font-size:16px;background:transparent;border:0;padding:2px 0 10px;resize:none;color:var(--text);border-radius:0}
+.card input.biz-title-in:focus,.card textarea.biz-pitch-in:focus{box-shadow:inset 0 -2px 0 var(--accent)}
+.biz-seg{display:flex;flex-wrap:wrap;gap:6px;padding:2px 0}
+.biz-seg::-webkit-scrollbar{display:none}
+.biz-seg button{flex:0 0 auto;min-height:40px;padding:0 13px;border-radius:999px;background:var(--fill);font-size:14px;font-weight:600;color:var(--text)}
+.biz-seg button.on{background:var(--bst,var(--accent));color:#fff}
+.h2-sub{text-transform:none;letter-spacing:0;font-weight:500;margin-left:6px}
+.biz-canvas{padding:12px 16px}
+.biz-canvas textarea,.biz-addrow textarea{resize:none;overflow:hidden;min-height:44px}
+.biz-f label{color:var(--text)}
+.biz-next label{color:var(--accent)}
+.biz-mini{min-height:40px;font-size:15px;margin-top:-4px}
+.biz-addrow{display:flex;gap:8px;align-items:flex-end;padding:10px 12px}
+.biz-addrow input,.biz-addrow textarea{flex:1}
+.biz-plus{flex:0 0 44px;width:44px;height:44px;padding:0;border-radius:12px;background:var(--accent);color:var(--accent-fg,#fff);font-size:24px;font-weight:500;line-height:44px}
+.biz-nums{padding:12px 16px}
+.biz-log .ntext{white-space:pre-wrap}
+.meta-biz{color:oklch(0.55 0.17 300)!important;font-weight:600}
+.link-more{min-height:40px;font-size:15px;margin-top:2px}
+#view-biz .group{margin-bottom:12px}
+#searchResults .biz-results{background:transparent}
+@media (min-width:1024px){
+  .biz-card{max-width:760px}
+  #bizDetail{max-width:760px}
+}
+@media (min-width:1024px){#remsBack{display:none}}
+body.biz-detail-on .qfab{display:none}
