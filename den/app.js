@@ -21,7 +21,7 @@ const BUCKETS=[
 ];
 const STATUSES=[{id:'open',name:'Otevřené'},{id:'wip',name:'Rozpracované'},{id:'wait',name:'Čeká'},{id:'done',name:'Hotovo'}];
 const REPEATS=[{id:'',name:'Neopakuje se',short:'Neopakuje se'},{id:'daily',name:'Denně',short:'Denně'},{id:'weekly',name:'Týdně',short:'Týdně'},{id:'monthly',name:'Měsíčně',short:'Měsíčně'},{id:'workdays',name:'Pracovní dny',short:'Pracovní dny'}];
-const APP_VERSION=12.1,APP_LABEL='12.1',APP_NAME='Kompas';
+const APP_VERSION=12.2,APP_LABEL='12.2',APP_NAME='Kompas';
 try{localStorage.removeItem('den_lock')}catch(e){}
 try{localStorage.removeItem('den_pending_mails')}catch(e){}
 const CAT_REPAIR={'432daf02':'sva','7e50a6ef':'sva','97d85896':'sva','c47f2c69':'zam','59a4c2fe':'zam','b39cb988':'sva','727076df':'sva','83367aa7':'fre','6a18e6c6':'fre','79486842':'fre','83549cb7':'lin','3ef16c57':'ost','6443a152':'ost','738ca1f6':'fre','66c017e9':'zam','a1b882a7':'zam','249f1330':'zam','9c9d5258':'zam','354dbdf3':'zam','b9e025f0':'pul','4185f791':'pul','fbe7d7cd':'pul','aab0cba9':'sva','c6bfbc8d':'sva','4aeb6c08':'sva','a3d38c38':'sva','6e49be28':'ost','5b60e232':'ost','ee532219':'lin','deafdb98':'lin','527a770f':'inv','f19d2292':'inv','f2e4f1b8':'sva','875b1851':'fre','c0e70d5':'inv','802e913d':'ost'};
@@ -3237,6 +3237,12 @@ document.addEventListener('visibilitychange',()=>{
 });
 setInterval(()=>{if(!document.hidden&&uiReady)pollInbox('timer')},5*60*1000);
 setInterval(()=>{if(!document.hidden&&uiReady)syncNow('pull')},90*1000);
+/* Devices left open for hours also pick up new versions (checked every 10 min). */
+setInterval(async()=>{
+  if(document.hidden||!uiReady||setupSW._reloading)return;
+  let remote=null;try{remote=await fetchRemoteVersion()}catch(e){}
+  if(remote!=null&&remote>Number(APP_VERSION)){setSyncStatus('busy','Aktualizuji…');await applySilentUpdate(setupSW._reg,remote)}
+},10*60*1000);
 window.addEventListener('online',()=>{if(uiReady)syncNow('online').then(()=>{if(hasSyncCreds())flashUpdated()})});
 window.addEventListener('offline',()=>setSyncStatus('warn','Offline – uloží se později'));
 function flashUpdated(){
