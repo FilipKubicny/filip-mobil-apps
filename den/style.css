@@ -502,3 +502,6 @@ details.advanced[open] summary::after{transform:rotate(90deg)}
 body.biz-detail-on .qfab{display:none}
 #taskTable th.col-check{width:64px;text-transform:none}
 #taskTable tbody tr.is-done td.task-name{text-decoration:line-through;color:var(--muted)}
+.task-export-bar{display:flex;justify-content:flex-end;margin:-4px 0 4px}
+.task-export-bar .link-btn{width:auto;padding:0 6px;font-size:14px;font-weight:600}
+@media print{.task-export-bar{display:none!important}}

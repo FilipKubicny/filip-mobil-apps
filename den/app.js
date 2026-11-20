@@ -21,7 +21,7 @@ const BUCKETS=[
 ];
 const STATUSES=[{id:'open',name:'Otevřené'},{id:'wip',name:'Rozpracované'},{id:'wait',name:'Čeká'},{id:'done',name:'Hotovo'}];
 const REPEATS=[{id:'',name:'Neopakuje se',short:'Neopakuje se'},{id:'daily',name:'Denně',short:'Denně'},{id:'weekly',name:'Týdně',short:'Týdně'},{id:'monthly',name:'Měsíčně',short:'Měsíčně'},{id:'workdays',name:'Pracovní dny',short:'Pracovní dny'}];
-const APP_VERSION=12.7,APP_LABEL='12.7',APP_NAME='Kompas';
+const APP_VERSION=12.8,APP_LABEL='12.8',APP_NAME='Kompas';
 const VIEWS=['dnes','ukoly','biz','dochazka','rems','notes'];
 const BIZ_STATUSES=[{id:'idea',name:'Nápad'},{id:'validating',name:'Ověřuji'},{id:'launching',name:'Rozjíždím'},{id:'running',name:'Běží'},{id:'paused',name:'Odloženo'}];
 const BIZ_CANVAS=[
@@ -1061,6 +1061,7 @@ $('sheetSave').onclick=()=>{
   if(sheetMode==='quick'){submitQuickAdd();return}
   if(sheetMode==='biz-new'){submitBizNew();return}
   if(sheetMode==='device-link'){closeSheet();return}
+  if(sheetMode==='task-export'){closeSheet();return}
   if(sheetMode==='pair-accept'){submitPairAccept();return}
   if(sheetMode==='pair-share'){closeSheet();return}
   if(sheetMode==='settings'){
@@ -3831,6 +3832,126 @@ async function shareTimesheetCsv(){
   const r=await shareOrDownload(blob,name,'Výkaz SAPEKOR');
   if(r!=='abort')toast(r==='share'?'Výkaz je v nabídce Sdílet':'Výkaz CSV je stažený');
 }
+/* ---------- Export úkolů (12.8) ---------- */
+let taskExpOpts={which:'open',cat:'all',from:'',to:''};
+function taskExportList(o){
+  o=o||taskExpOpts;
+  const bOrder={};BUCKETS.forEach((b,i)=>bOrder[b.id]=i);
+  const inRange=t=>{
+    if(!o.from&&!o.to)return true;
+    return [t.created,t.due,t.doneAt].filter(Boolean).some(d=>(!o.from||d>=o.from)&&(!o.to||d<=o.to));
+  };
+  const list=tasks.filter(t=>{
+    if(!isTaskShown(t))return false;
+    if(o.which==='open'&&t.status==='done')return false;
+    if(o.which==='done'&&t.status!=='done')return false;
+    if(o.cat&&o.cat!=='all'&&t.cat!==o.cat)return false;
+    return inRange(t);
+  });
+  const open=list.filter(t=>t.status!=='done').sort((a,b)=>(bOrder[a.bucket]-bOrder[b.bucket])||String(a.due||'9999').localeCompare(String(b.due||'9999'))||String(a.created).localeCompare(String(b.created))||a.text.localeCompare(b.text,'cs'));
+  const done=list.filter(t=>t.status==='done').sort((a,b)=>String(b.doneAt||'').localeCompare(String(a.doneAt||''))||a.text.localeCompare(b.text,'cs'));
+  return {open,done,all:open.concat(done)};
+}
+function taskExportTitle(o){
+  o=o||taskExpOpts;
+  let t='Úkoly – '+({open:'otevřené',done:'hotové',all:'všechny'}[o.which]||'všechny');
+  if(o.cat&&o.cat!=='all')t+=' · '+catBy(o.cat).name;
+  if(o.from||o.to)t+=' · '+(o.from?czDateSp(o.from):'…')+' – '+(o.to?czDateSp(o.to):'…');
+  return t;
+}
+function taskExportCsv(o){
+  const L=taskExportList(o);
+  const lines=[['Úkol','Stav','Stav podrobně','Kategorie','Období','Termín','Opakování','Vytvořeno','Hotovo dne','Startup','Poznámka','Od IS BOTa']];
+  L.all.forEach(t=>{
+    const bz=bizForTask(t.id);
+    lines.push([t.text,t.status==='done'?'hotovo':'otevřený',stBy(t.status).name,catBy(t.cat).name,t.status==='done'?'':buckBy(t.bucket).name,czDate(t.due),repeatLabel(t.repeat||'')==='Neopakuje se'?'':repeatLabel(t.repeat||''),czDate(t.created),czDate(t.doneAt),bz?bz.name:'',t.note||'',t.from==='bot'?'ano':'']);
+  });
+  return '\uFEFF'+lines.map(r=>r.map(x=>csvEsc(String(x??'').replace(/\r\n?/g,'\n'))).join(';')).join('\r\n');
+}
+function taskLine(t){
+  let s=(t.status==='done'?'✓ ':'• ')+t.text;
+  const meta=[catBy(t.cat).short||catBy(t.cat).name];
+  if(t.status==='wip'||t.status==='wait')meta.push(stBy(t.status).name.toLowerCase());
+  if(t.due&&t.status!=='done')meta.push('termín '+czDateSp(t.due));
+  if(t.repeat)meta.push(repeatLabel(t.repeat).toLowerCase());
+  if(t.status==='done'&&t.doneAt)meta.push('hotovo '+czDateSp(t.doneAt));
+  s+=' ('+meta.join(', ')+')';
+  if(t.note)s+='\n   '+t.note.replace(/\s*\n\s*/g,' / ');
+  return s;
+}
+function taskExportText(o){
+  const L=taskExportList(o);
+  const out=[taskExportTitle(o),'Stav k '+czDateSp(todayISO())+' · '+czCount(L.all.length,'úkol','úkoly','úkolů'),''];
+  BUCKETS.forEach(b=>{
+    const g=L.open.filter(t=>t.bucket===b.id);if(!g.length)return;
+    out.push(b.name.toUpperCase());g.forEach(t=>out.push(taskLine(t)));out.push('');
+  });
+  if(L.done.length){out.push('HOTOVO');L.done.forEach(t=>out.push(taskLine(t)));out.push('')}
+  if(!L.all.length)out.push('Žádné úkoly.');
+  return out.join('\n').trim()+'\n';
+}
+function taskExportHtml(o){
+  const L=taskExportList(o);
+  const row=t=>{const bz=bizForTask(t.id);return '<tr'+(t.status==='done'?' class="done"':'')+'><td class="ck">'+(t.status==='done'?'☑':'☐')+'</td><td><b>'+esc(t.text)+'</b>'+(t.note?'<div class="note">'+esc(t.note)+'</div>':'')+'</td><td>'+esc(catBy(t.cat).name)+(bz?'<div class="note">'+esc(bz.name)+'</div>':'')+'</td><td>'+esc(t.status==='done'?'Hotovo':stBy(t.status).name)+'</td><td class="nw">'+esc(czDate(t.due))+(t.repeat?'<div class="note">'+esc(repeatLabel(t.repeat))+'</div>':'')+'</td><td class="nw">'+esc(t.status==='done'?czDate(t.doneAt):czDate(t.created))+'</td></tr>'};
+  const table=(title,arr,dateHead)=>'<h2>'+esc(title)+' <span class="n">('+arr.length+')</span></h2><table><colgroup><col style="width:5%"><col style="width:39%"><col style="width:16%"><col style="width:14%"><col style="width:13%"><col style="width:13%"></colgroup><thead><tr><th class="ck"></th><th>Úkol</th><th>Kategorie</th><th>Stav</th><th>Termín</th><th>'+dateHead+'</th></tr></thead><tbody>'+arr.map(row).join('')+'</tbody></table>';
+  let body='';
+  BUCKETS.forEach(b=>{const g=L.open.filter(t=>t.bucket===b.id);if(g.length)body+=table(b.name,g,'Vytvořeno')});
+  if(L.done.length)body+=table('Hotovo',L.done,'Hotovo dne');
+  if(!L.all.length)body='<p>Žádné úkoly.</p>';
+  return '<!doctype html><html lang="cs"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+esc(taskExportTitle(o))+'</title>'+
+    '<style>body{font-family:system-ui,sans-serif;color:#111;margin:20px;font-size:13px}h1{font-size:20px;margin:0 0 4px}h2{font-size:15px;margin:18px 0 6px;break-after:avoid}h2 .n{color:#666;font-weight:400}.meta{color:#444;margin:0 0 12px}table{border-collapse:collapse;width:100%;table-layout:fixed}th,td{border:1px solid #ccc;padding:5px 7px;text-align:left;vertical-align:top;overflow-wrap:anywhere}th{background:#f3f3f3}tr{break-inside:avoid}td.ck,th.ck{width:18px;text-align:center}td.nw{white-space:nowrap}.note{color:#555;font-size:12px;margin-top:2px;white-space:pre-wrap}tr.done b{color:#555}.bar{margin:0 0 14px}.bar button{font:inherit;padding:8px 14px;margin-right:6px}@media print{body{margin:12mm}.bar{display:none}}</style></head><body>'+
+    '<div class="bar"><button onclick="window.print()">Tisk / uložit PDF</button><button onclick="window.close()">Zavřít</button></div>'+
+    '<h1>'+esc(taskExportTitle(o))+'</h1><p class="meta">Stav k '+esc(czDateSp(todayISO()))+' · '+esc(czCount(L.all.length,'úkol','úkoly','úkolů'))+'</p>'+body+'</body></html>';
+}
+function openTaskExportPrint(){
+  const w=window.open('','_blank');
+  if(!w){toast('Prohlížeč zablokoval okno. Povol vyskakovací okna a zkus znovu.');return}
+  w.document.write(taskExportHtml(taskExpOpts));w.document.close();
+  setTimeout(()=>{try{if(!window.__denNoPrint){w.focus();w.print()}}catch(e){}},300);
+}
+async function shareTaskExportCsv(){
+  const name='ukoly-'+({open:'otevrene',done:'hotove',all:'vsechny'}[taskExpOpts.which]||'vsechny')+'-'+todayISO()+'.csv';
+  const blob=new Blob([taskExportCsv(taskExpOpts)],{type:'text/csv;charset=utf-8'});
+  const r=await shareOrDownload(blob,name,'Úkoly');
+  if(r!=='abort')toast(r==='share'?'Úkoly jsou v nabídce Sdílet':'Úkoly CSV jsou stažené');
+}
+async function shareTaskExportText(){
+  const text=taskExportText(taskExpOpts);
+  if(navigator.share){
+    try{await navigator.share({title:taskExportTitle(taskExpOpts),text});return}
+    catch(e){if(e&&e.name==='AbortError')return}
+  }
+  copyText(text,'Úkoly jsou ve schránce – vlož je třeba do WhatsAppu');
+}
+function openTaskExport(){
+  sheetMode='task-export';sheetTarget=null;
+  if(taskFilter!=='all'&&taskExpOpts.cat==='all')taskExpOpts.cat=taskFilter;
+  if(taskExpOpts.cat!=='all'&&!allCats().some(c=>c.id===taskExpOpts.cat))taskExpOpts.cat='all';
+  $('sheetTitle').textContent='Export úkolů';
+  $('sheetDelete').hidden=true;
+  if($('sheetSave'))$('sheetSave').hidden=true;
+  const usedCats=allCats().filter(c=>tasks.some(t=>isTaskShown(t)&&t.cat===c.id));
+  $('sheetBody').innerHTML=
+    '<div class="field"><span class="lbl">Které úkoly</span><div class="chips" id="xWhich"></div></div>'+
+    (usedCats.length>1?'<div class="field"><span class="lbl">Kategorie</span><div class="chips" id="xCat"></div></div>':'')+
+    '<div class="field"><span class="lbl">Období (nepovinné)</span><div class="row2" style="display:flex;gap:8px"><input type="date" id="xFrom" aria-label="Od" value="'+esc(taskExpOpts.from)+'" style="flex:1;min-width:0"><input type="date" id="xTo" aria-label="Do" value="'+esc(taskExpOpts.to)+'" style="flex:1;min-width:0"></div><p class="muted small">Podle data vytvoření, termínu nebo dokončení. Prázdné = bez omezení.</p></div>'+
+    '<p class="muted" id="xCount"></p>'+
+    '<button type="button" class="primary" id="xText">Sdílet jako text (WhatsApp, e-mail)</button>'+
+    '<div class="actions" style="margin-top:10px"><button type="button" class="secondary" id="xCsv">Tabulka CSV (Excel)</button><button type="button" class="secondary" id="xPdf">PDF / tisk</button></div>';
+  const count=()=>{const n=taskExportList(taskExpOpts).all.length;$('xCount').textContent='Vybráno: '+czCount(n,'úkol','úkoly','úkolů');['xText','xCsv','xPdf'].forEach(id=>{$(id).disabled=!n})};
+  const redraw=()=>{
+    paintChips($('xWhich'),[{id:'open',name:'Jen otevřené'},{id:'all',name:'Všechny'},{id:'done',name:'Jen hotové'}],taskExpOpts.which,false,id=>{taskExpOpts.which=id;redraw()});
+    if($('xCat'))paintChips($('xCat'),[{id:'all',name:'Všechny'}].concat(usedCats),taskExpOpts.cat,true,id=>{taskExpOpts.cat=id;redraw()});
+    count();
+  };
+  redraw();
+  $('xFrom').onchange=()=>{taskExpOpts.from=$('xFrom').value||'';count()};
+  $('xTo').onchange=()=>{taskExpOpts.to=$('xTo').value||'';count()};
+  $('xText').onclick=()=>{shareTaskExportText()};
+  $('xCsv').onclick=()=>{shareTaskExportCsv()};
+  $('xPdf').onclick=openTaskExportPrint;
+  $('overlay').hidden=false;document.body.classList.add('locked');
+}
 if($('searchQ')){
   $('searchQ').addEventListener('input',renderSearch);
   $('searchQ').addEventListener('search',renderSearch);
@@ -3840,6 +3961,8 @@ if($('backupFile'))$('backupFile').addEventListener('change',ev=>{
 });
 if($('timesheetPdf'))$('timesheetPdf').onclick=openTimesheetPrint;
 if($('timesheetCsv'))$('timesheetCsv').onclick=()=>{shareTimesheetCsv()};
+if($('taskExportBtn'))$('taskExportBtn').onclick=()=>{haptic();openTaskExport()};
+if($('deskExport'))$('deskExport').onclick=()=>openTaskExport();
 if($('pairBanner'))$('pairBanner').onclick=()=>showWelcome();
 updateOnline();
 setupPullToRefresh();
