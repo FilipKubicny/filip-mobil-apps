@@ -505,3 +505,8 @@ body.biz-detail-on .qfab{display:none}
 .task-export-bar{display:flex;justify-content:flex-end;margin:-4px 0 4px}
 .task-export-bar .link-btn{width:auto;padding:0 6px;font-size:14px;font-weight:600}
 @media print{.task-export-bar{display:none!important}}
+/* 12.9: zaškrtávátka byla kvůli appearance:none vždy prázdná – teď je vidět stav */
+input[type=checkbox]{-webkit-appearance:none;appearance:none;width:22px;height:22px;min-width:22px;padding:0;margin:0;border:2px solid var(--muted);border-radius:6px;background:var(--bg) center/16px 16px no-repeat;cursor:pointer;resize:none;vertical-align:middle}
+input[type=checkbox]:checked{background-color:var(--accent);border-color:var(--accent);background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5l3 3 6-7' fill='none' stroke='%23fff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")}
+input[type=checkbox]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#taskTable input[type=checkbox]{width:18px;height:18px;min-width:18px;background-size:13px 13px}

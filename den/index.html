@@ -14,7 +14,7 @@
 <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<link rel="stylesheet" href="style.css?v=12.8">
+<link rel="stylesheet" href="style.css?v=12.9">
 </head>
 <body>
 <div id="appRoot">
@@ -34,7 +34,7 @@
   <div class="sb-foot">
     <div class="sb-syncline"><span id="sbSyncState" class="sync-status" aria-hidden="true"></span></div>
     <button type="button" class="sb-settings" id="sbSettings">Nastavení</button>
-    <div class="sb-ver" id="appSidebarVer">verze 12.8</div>
+    <div class="sb-ver" id="appSidebarVer">verze 12.9</div>
   </div>
 </aside>
 <div id="appMain">
@@ -47,7 +47,7 @@
       <button type="button" class="ghost-btn icon-btn" id="settingsBtn" aria-label="Nastavení"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></button>
     </div>
   </div>
-  <h1 class="large-title" id="largeTitle">Kompas <span class="ver" id="appVer">verze 12.8</span></h1>
+  <h1 class="large-title" id="largeTitle">Kompas <span class="ver" id="appVer">verze 12.9</span></h1>
 </header>
 <div id="storageWarn" class="banner warn" hidden>Paměť telefonu je plná. Data se nemusí uložit — udělej zálohu v Nastavení.</div>
 <div id="offlineBanner" class="banner offline" role="status" hidden>Jsi offline – vše se uloží v telefonu a odešle samo, až bude signál.</div>
@@ -77,22 +77,22 @@
   <section class="card">
     <h2 class="incard">Docházka dnes</h2>
     <div class="row field">
-      <div><label for="from1">Od</label><input type="time" id="from1" step="300"></div>
-      <div><label for="to1">Do</label><input type="time" id="to1" step="300"></div>
+      <div><label for="from1">Od</label><input type="time" id="from1" step="300" autocomplete="off"></div>
+      <div><label for="to1">Do</label><input type="time" id="to1" step="300" autocomplete="off"></div>
     </div>
     <div class="row field" id="span2row" hidden>
-      <div><label for="from2">Od (druhý čas)</label><input type="time" id="from2" step="300"></div>
-      <div><label for="to2">Do</label><input type="time" id="to2" step="300"></div>
+      <div><label for="from2">Od (druhý čas)</label><input type="time" id="from2" step="300" autocomplete="off"></div>
+      <div><label for="to2">Do</label><input type="time" id="to2" step="300" autocomplete="off"></div>
     </div>
     <div class="actions tight">
       <button type="button" class="secondary" id="toggleSpan2">+ Druhý čas</button>
     </div>
-    <label class="check"><input type="checkbox" id="lunch" checked> Odečíst 30 min pauzu na oběd</label>
-    <label class="check"><input type="checkbox" id="nonbill"> Nefakturuje se / mimo SAPEKOR</label>
+    <label class="check"><input type="checkbox" id="lunch" checked autocomplete="off"> Odečíst 30 min pauzu na oběd</label>
+    <label class="check"><input type="checkbox" id="nonbill" autocomplete="off"> Nefakturuje se / mimo SAPEKOR</label>
     <div class="total" id="total">Odpracováno: –<small>pauza 30 min se odečte</small></div>
-    <div class="field"><label for="work">Na čem jsem pracoval</label><textarea id="work" rows="3" placeholder="Každá činnost na nový řádek"></textarea></div>
-    <div class="field"><label for="expWhat">Výdaj (volitelné)</label><input type="text" id="expWhat" placeholder="Za co"></div>
-    <div class="field"><label for="expCzk">Částka v Kč</label><input type="number" id="expCzk" min="0" step="1" inputmode="numeric" placeholder="0"></div>
+    <div class="field"><label for="work">Na čem jsem pracoval</label><textarea id="work" rows="3" autocomplete="off" placeholder="Každá činnost na nový řádek"></textarea></div>
+    <div class="field"><label for="expWhat">Výdaj (volitelné)</label><input type="text" id="expWhat" autocomplete="off" placeholder="Za co"></div>
+    <div class="field"><label for="expCzk">Částka v Kč</label><input type="number" id="expCzk" autocomplete="off" min="0" step="1" inputmode="numeric" placeholder="0"></div>
   </section>
 
   <section class="card">
@@ -120,7 +120,7 @@
   </section>
 
   <section class="card">
-    <div class="field"><label for="dayNotes">Poznámky k dnešku</label><textarea id="dayNotes" rows="2" placeholder="Cokoliv dalšího pro IS BOTa"></textarea></div>
+    <div class="field"><label for="dayNotes">Poznámky k dnešku</label><textarea id="dayNotes" autocomplete="off" rows="2" placeholder="Cokoliv dalšího pro IS BOTa"></textarea></div>
   </section>
 
   <section class="card" id="todayNotesCard">
@@ -277,7 +277,7 @@
 <input type="file" id="backupFile" accept=".enc,.denbak,application/json" hidden>
 <div class="toast" id="toast" role="status"></div>
 </div><!-- /appRoot -->
-<script src="qr.js?v=12.8"></script>
-<script src="app.js?v=12.8"></script>
+<script src="qr.js?v=12.9"></script>
+<script src="app.js?v=12.9"></script>
 </body>
 </html>

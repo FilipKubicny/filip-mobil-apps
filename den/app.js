@@ -21,7 +21,7 @@ const BUCKETS=[
 ];
 const STATUSES=[{id:'open',name:'Otevřené'},{id:'wip',name:'Rozpracované'},{id:'wait',name:'Čeká'},{id:'done',name:'Hotovo'}];
 const REPEATS=[{id:'',name:'Neopakuje se',short:'Neopakuje se'},{id:'daily',name:'Denně',short:'Denně'},{id:'weekly',name:'Týdně',short:'Týdně'},{id:'monthly',name:'Měsíčně',short:'Měsíčně'},{id:'workdays',name:'Pracovní dny',short:'Pracovní dny'}];
-const APP_VERSION=12.8,APP_LABEL='12.8',APP_NAME='Kompas';
+const APP_VERSION=12.9,APP_LABEL='12.9',APP_NAME='Kompas';
 const VIEWS=['dnes','ukoly','biz','dochazka','rems','notes'];
 const BIZ_STATUSES=[{id:'idea',name:'Nápad'},{id:'validating',name:'Ověřuji'},{id:'launching',name:'Rozjíždím'},{id:'running',name:'Běží'},{id:'paused',name:'Odloženo'}];
 const BIZ_CANVAS=[
@@ -439,6 +439,7 @@ window.__lastMailto='';
 
 function searchActive(){return !!(($('searchQ')&&$('searchQ').value||'').trim())}
 function refreshLists(){
+  checkTodayRollover();
   syncTodayFormFromState();
   if(searchActive()){renderSearch();return}
   if(view==='dnes')renderDnes();
@@ -519,7 +520,9 @@ function updateTotal(){
   saveDraft();
 }
 function saveDraft(){
-  save('den_draft',{from1:$('from1').value,to1:$('to1').value,from2:$('from2').value,to2:$('to2').value,span2:!$('span2row').hidden,lunch:$('lunch').checked,nonbill:$('nonbill').checked,work:$('work').value,expWhat:$('expWhat').value,expCzk:$('expCzk').value,notes:$('dayNotes').value});
+  if(!initForm._done)return;
+  if(todayFormDate&&todayFormDate!==todayISO())return;
+  save('den_draft',{date:todayFormDate||todayISO(),from1:$('from1').value,to1:$('to1').value,from2:$('from2').value,to2:$('to2').value,span2:!$('span2row').hidden,lunch:$('lunch').checked,nonbill:$('nonbill').checked,work:$('work').value,expWhat:$('expWhat').value,expCzk:$('expCzk').value,notes:$('dayNotes').value});
 }
 function setSpan2(on){
   $('span2row').hidden=!on;
@@ -570,7 +573,27 @@ function dayContentSig(d){
   if(!d)return '';
   return JSON.stringify({spans:d.spans||[],pause:d.pause_min||0,nb:!!d.nonbillable,work:d.work||[],notes:d.notes||'',fixed:d.fixed_min==null?null:d.fixed_min,w:d.worked_min||0,areas:d.areas||[]});
 }
-let todayFormFilledSig='',todayFormDirty=false;
+let todayFormFilledSig='',todayFormDirty=false,todayFormDate='';
+/* Nový den = prázdný formulář. Nic z včerejška (časy, práce, výdaj, poznámka) se nepřenáší. */
+function resetTodayForm(){
+  clearTimeout(scheduleTodaySave._t);
+  ['from1','to1','from2','to2','work','expWhat','expCzk','dayNotes'].forEach(id=>{if($(id))$(id).value=''});
+  if($('span2row'))$('span2row').hidden=true;
+  if($('toggleSpan2'))$('toggleSpan2').textContent='+ Druhý čas';
+  if($('lunch'))$('lunch').checked=true;
+  if($('nonbill'))$('nonbill').checked=false;
+  todayFormDate=todayISO();
+  try{localStorage.removeItem('den_draft')}catch(e){}
+  const d=findDay(todayFormDate);
+  if(d)fillTodayForm(d);
+  else{updateTotal();todayFormFilledSig=todayFormSigFromDom();todayFormDirty=false}
+}
+function checkTodayRollover(){
+  if(!initForm._done||!todayFormDate||todayFormDate===todayISO())return false;
+  resetTodayForm();
+  if(uiReady&&view==='dnes')renderDnes();
+  return true;
+}
 function fillTodayForm(d){
   const s=(d&&d.spans)||[];
   $('from1').value=s[0]?s[0][0]:'';$('to1').value=s[0]?s[0][1]:'';
@@ -594,10 +617,12 @@ function syncTodayFormFromState(){
   }
 }
 function scheduleTodaySave(){
+  if(checkTodayRollover())return;
   if(todayFormSigFromDom()!==todayFormFilledSig)todayFormDirty=true;
   if(todayFormIsBlank())return;
   clearTimeout(scheduleTodaySave._t);
   scheduleTodaySave._t=setTimeout(()=>{
+    if(checkTodayRollover())return;
     if(saveTodayAttendance()){todayFormFilledSig=todayFormSigFromDom();todayFormDirty=false}
   },500);
 }
@@ -1474,6 +1499,7 @@ function renderTodayNotes(){
 }
 
 function renderDnes(){
+  checkTodayRollover();
   const d=parseISO(todayISO());
   $('todayLabel').textContent=WD[d.getDay()]+' '+d.getDate()+'. '+(d.getMonth()+1)+'. '+d.getFullYear();
   const oc=$('onboardCard');
@@ -2322,8 +2348,10 @@ function splitPayload(p){
 }
 function initForm(){
   if(initForm._done)return;
-  const d=load('den_draft',null);
-  const existing=findDay(todayISO());
+  todayFormDate=todayISO();
+  let d=load('den_draft',null);
+  if(d&&d.date!==todayFormDate){d=null;try{localStorage.removeItem('den_draft')}catch(e){}}
+  const existing=findDay(todayFormDate);
   if(existing)fillTodayForm(existing);
   else if(d){
     $('from1').value=d.from1||'';$('to1').value=d.to1||'';
@@ -2333,8 +2361,9 @@ function initForm(){
   }
   if(d&&d.notes)$('dayNotes').value=d.notes;
   pendingMails=load('den_pending_mails',[])||[];
-  updateTotal();
   initForm._done=true;
+  updateTotal();
+  todayFormFilledSig=todayFormSigFromDom();
 }
 
 function bootUi(){
@@ -3650,6 +3679,7 @@ document.addEventListener('visibilitychange',()=>{
 });
 setInterval(()=>{if(!document.hidden&&uiReady)pollInbox('timer')},5*60*1000);
 setInterval(()=>{if(!document.hidden&&uiReady)syncNow('pull')},90*1000);
+setInterval(()=>{if(!document.hidden&&uiReady)checkTodayRollover()},60*1000);
 /* Devices left open for hours also pick up new versions (checked every 10 min). */
 setInterval(async()=>{
   if(document.hidden||!uiReady||setupSW._reloading)return;
@@ -3703,6 +3733,7 @@ async function afterResumePull(){
 }
 function onAppResume(){
   if(document.visibilityState==='hidden')return;
+  if(!checkTodayRollover()&&initForm._done&&$('total'))updateTotal();
   const now=Date.now();
   if(onAppResume._busy)return;
   if(onAppResume._at&&now-onAppResume._at<1000)return;
